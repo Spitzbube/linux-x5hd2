@@ -23,10 +23,18 @@
 #include <linux/ahci_platform.h>
 #include "ahci.h"
 
+#include "ahci_sys.h"
+#include "hi_sata_dbg.h"
+
+static unsigned int ncq_en = 1;
+module_param(ncq_en, uint, 0600);
+MODULE_PARM_DESC(ncq_en, "ahci ncq flag (default:1)");
+
 enum ahci_type {
 	AHCI,		/* standard platform ahci */
 	IMX53_AHCI,	/* ahci on i.mx53 */
 	STRICT_AHCI,	/* delayed DMA engine start */
+	HISILICON_AHCI, /* Hisilicon ahci */
 };
 
 static struct platform_device_id ahci_devtype[] = {
@@ -39,6 +47,9 @@ static struct platform_device_id ahci_devtype[] = {
 	}, {
 		.name = "strict-ahci",
 		.driver_data = STRICT_AHCI,
+	}, {
+		.name = "hisilicon-ahci",
+		.driver_data = HISILICON_AHCI,
 	}, {
 		/* sentinel */
 	}
@@ -62,6 +73,12 @@ static const struct ata_port_info ahci_port_info[] = {
 	},
 	[STRICT_AHCI] = {
 		AHCI_HFLAGS	(AHCI_HFLAG_DELAY_ENGINE),
+		.flags		= AHCI_FLAG_COMMON,
+		.pio_mask	= ATA_PIO4,
+		.udma_mask	= ATA_UDMA6,
+		.port_ops	= &ahci_ops,
+	},
+	[HISILICON_AHCI] = {
 		.flags		= AHCI_FLAG_COMMON,
 		.pio_mask	= ATA_PIO4,
 		.udma_mask	= ATA_UDMA6,
@@ -129,13 +146,20 @@ static int __init ahci_probe(struct platform_device *pdev)
 			return rc;
 	}
 
+	hi_sata_init(hpriv->mmio);
+
 	ahci_save_initial_config(dev, hpriv,
 		pdata ? pdata->force_port_map : 0,
 		pdata ? pdata->mask_port_map  : 0);
 
 	/* prepare host */
-	if (hpriv->cap & HOST_CAP_NCQ)
+	if (hpriv->cap & HOST_CAP_NCQ) {
+		printk("NCQ is supported.\n");
 		pi.flags |= ATA_FLAG_NCQ;
+	}
+
+	if (!ncq_en)
+		pi.flags &= ~ATA_FLAG_NCQ;
 
 	if (hpriv->cap & HOST_CAP_PMP)
 		pi.flags |= ATA_FLAG_PMP;
@@ -210,6 +234,8 @@ static int __devexit ahci_remove(struct platform_device *pdev)
 	if (pdata && pdata->exit)
 		pdata->exit(dev);
 
+	hi_sata_exit();
+
 	return 0;
 }
 
@@ -241,7 +267,9 @@ static int ahci_suspend(struct device *dev)
 	rc = ata_host_suspend(host, PMSG_SUSPEND);
 	if (rc)
 		return rc;
-
+		
+	hi_sata_exit();
+	
 	if (pdata && pdata->suspend)
 		return pdata->suspend(dev);
 	return 0;
@@ -253,6 +281,7 @@ static int ahci_resume(struct device *dev)
 	struct ata_host *host = dev_get_drvdata(dev);
 	int rc;
 
+	hi_sata_init(0);
 	if (pdata && pdata->resume) {
 		rc = pdata->resume(dev);
 		if (rc)
@@ -298,8 +327,49 @@ static struct platform_driver ahci_driver = {
 	.id_table	= ahci_devtype,
 };
 
+static struct resource hisatav100_ahci_resources[] = {
+	[0] = {
+		.start          = CONFIG_HI_SATA_IOBASE,
+		.end            = CONFIG_HI_SATA_IOBASE +
+					CONFIG_HI_SATA_IOSIZE - 1,
+		.flags          = IORESOURCE_MEM,
+	},
+	[1] = {
+		.start          = CONFIG_HI_SATA_IRQNUM,
+		.end            = CONFIG_HI_SATA_IRQNUM,
+		.flags		= IORESOURCE_IRQ,
+	},
+};
+
+static u64 ahci_dmamask = ~(u32)0;
+
+static void hisatav100_ahci_platdev_release(struct device *dev)
+{
+}
+
+static struct platform_device hisatav100_ahci_device = {
+	.name           = "ahci",
+	.dev = {
+		.dma_mask               = &ahci_dmamask,
+		.coherent_dma_mask      = 0xffffffff,
+		.release                = hisatav100_ahci_platdev_release,
+	},
+	.num_resources  = ARRAY_SIZE(hisatav100_ahci_resources),
+	.resource       = hisatav100_ahci_resources,
+	.id_entry = &ahci_devtype[HISILICON_AHCI],
+};
+
 static int __init ahci_init(void)
 {
+	int ret;
+
+	ret = platform_device_register(&hisatav100_ahci_device);
+	if (ret) {
+		printk(KERN_ERR "[%s %d] sata platform device register "
+				"is failed!!!\n", __func__, __LINE__);
+		return ret;
+	}
+
 	return platform_driver_probe(&ahci_driver, ahci_probe);
 }
 module_init(ahci_init);
@@ -307,6 +377,7 @@ module_init(ahci_init);
 static void __exit ahci_exit(void)
 {
 	platform_driver_unregister(&ahci_driver);
+	platform_device_unregister(&hisatav100_ahci_device);
 }
 module_exit(ahci_exit);
 

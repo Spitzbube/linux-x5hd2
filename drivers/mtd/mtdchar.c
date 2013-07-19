@@ -1012,6 +1012,142 @@ static int mtdchar_ioctl(struct file *file, u_int cmd, u_long arg)
 		break;
 	}
 
+	case MEMEWRITEPAGE:
+	{
+		struct mtd_epage_buf buf;
+		struct mtd_epage_buf *buf_user = argp;
+		struct mtd_oob_ops ops;
+
+		if (mtd->type != MTD_NANDFLASH)
+			return -EOPNOTSUPP;
+
+		if (copy_from_user(&buf, argp, sizeof(buf)))
+			return -EFAULT;
+
+		if (buf.oob_len > mtd->oobsize || buf.data_len > mtd->writesize)
+			return -EINVAL;
+
+		if (!mtd->_write_oob)
+			return -EOPNOTSUPP;
+
+		ops.len = mtd->writesize;
+		ops.ooblen = buf.oob_len;
+		ops.ooboffs = buf.start & (mtd->oobsize - 1);
+		ops.mode = MTD_OPS_PLACE_OOB;
+
+		if (ops.ooboffs && ops.ooblen > (mtd->oobsize - ops.ooboffs))
+			return -EINVAL;
+
+		/* alloc memory and copy oob data from user mode
+		 * to kernel mode
+		 */
+		ops.oobbuf = kmalloc(buf.oob_len, GFP_KERNEL);
+		if (!ops.oobbuf)
+			return -ENOMEM;
+
+		if (copy_from_user(ops.oobbuf, buf.oob_ptr, buf.oob_len)) {
+			kfree(ops.oobbuf);
+			return -EFAULT;
+		}
+
+		/* alloc memory and copy page data from user mode
+		 * to kernel mode
+		 */
+		ops.datbuf = kmalloc(mtd->writesize, GFP_KERNEL);
+		if (!ops.datbuf) {
+			kfree(ops.oobbuf);
+			return -ENOMEM;
+		}
+		if (copy_from_user(ops.datbuf, buf.data_ptr, mtd->writesize)) {
+			kfree(ops.oobbuf);
+			kfree(ops.datbuf);
+			return -EFAULT;
+		}
+
+		buf.start &= ~(mtd->oobsize - 1);
+		ret = mtd->_write_oob(mtd, buf.start, &ops);
+
+		kfree(ops.oobbuf);
+		kfree(ops.datbuf);
+
+		if (ret)
+			return ret;
+
+		if (copy_to_user(&buf_user->oob_len, &ops.oobretlen,
+				sizeof(buf_user->oob_len)))
+			return -EFAULT;
+
+		if (copy_to_user(&buf_user->data_len, &ops.retlen,
+				sizeof(buf_user->data_len)))
+			return  -EFAULT;
+
+		break;
+	}
+	case MEMEREADPAGE:
+	{
+		struct mtd_epage_buf buf;
+		struct mtd_epage_buf *buf_user = argp;
+		struct mtd_oob_ops ops;
+
+		if (mtd->type != MTD_NANDFLASH)
+			return -EOPNOTSUPP;
+
+		if (copy_from_user(&buf, argp, sizeof(buf)))
+			return -EFAULT;
+
+		if (buf.oob_len > mtd->oobsize || buf.data_len > mtd->writesize)
+			return -EINVAL;
+
+		if (!mtd->_read_oob)
+			return -EOPNOTSUPP;
+
+		ops.len = mtd->writesize;
+		ops.ooblen = buf.oob_len;
+		ops.mode = MTD_OPS_PLACE_OOB;
+		ops.ooboffs = buf.start & (mtd->oobsize - 1);
+
+		if (ops.ooboffs && ops.ooblen > (mtd->oobsize - ops.ooboffs))
+			return -EINVAL;
+
+		/* alloc memory and copy oob data from user mode
+		 * to kernel mode
+		 */
+		ops.oobbuf = kmalloc(mtd->oobsize, GFP_KERNEL);
+		if (!ops.oobbuf)
+			return -ENOMEM;
+		/* alloc memory and copy page data from user mode
+		 * to kernel mode
+		 */
+		ops.datbuf = kmalloc(mtd->writesize, GFP_KERNEL);
+		if (!ops.datbuf) {
+			kfree(ops.oobbuf);
+			return -ENOMEM;
+		}
+		buf.start &= ~(mtd->oobsize - 1);
+		ret = mtd->_read_oob(mtd, buf.start, &ops);
+
+		if (ret) {
+			kfree(ops.oobbuf);
+			kfree(ops.datbuf);
+			return ret;
+		}
+
+		if (copy_to_user(buf_user->oob_ptr, ops.oobbuf, ops.oobretlen)
+		    || copy_to_user(buf_user->data_ptr, ops.datbuf, ops.retlen)
+		    || copy_to_user(&buf_user->oob_len, &ops.oobretlen,
+		                    sizeof(buf_user->oob_len))
+		    || copy_to_user(&buf_user->data_len, &ops.retlen, 
+		                    sizeof(buf_user->data_len))) {
+			kfree(ops.oobbuf);
+			kfree(ops.datbuf);
+			return -EFAULT;
+		}
+
+		kfree(ops.oobbuf);
+		kfree(ops.datbuf);
+		break;
+	}
+
 	default:
 		ret = -ENOTTY;
 	}

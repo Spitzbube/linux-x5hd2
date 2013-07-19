@@ -1,0 +1,92 @@
+#
+# hieth family network device configuration
+#
+
+menuconfig HIETH_GMAC
+	tristate "hieth gmac family network device support"
+#	depends on (ARCH_GODEYES)
+	default y
+
+	help
+	  This selects the hieth gmac family network device.
+
+if HIETH_GMAC
+
+config HIETH_TAG
+	hex "hieth-gmac misc tag"
+	default "0x544100ff"
+	help
+	  This is graceful set phy interface/mdio/phyaddr in kernel.
+
+config ETHADDR_TAG
+	hex "hieth-gmac mac address tag"
+	default "0x726d6d73"
+	help
+	  This is graceful set mac address in kernel.
+
+config HIGMAC_IOBASE
+	hex "hieth-gmac IO address"
+	default "0xf9840000"
+
+config HIGMAC_IRQNUM
+	int "hieth-gmac irq number"
+	default "103"
+
+config HIGMAC_PHY0_ADDR
+	int "hieth-gmac0 phyid"
+	range 1 31
+	default "1"
+	help
+	  hieth-gmac phyid addr.
+
+config HIGMAC_PHY1_ADDR
+	int "hieth-gmac1 phyid"
+	range 1 31
+	default "2"
+	help
+	  hieth-gmac phyid addr.
+
+config HIGMAC_MAX_QUEUE_DEPTH
+	int "hieth-gmac max hardware queue depth"
+	range 1 65535
+	default "1024"
+	help
+	  This option limit the scope of hardware queue.
+
+config HIGMAC_HWQ_RX_FQ_DEPTH
+	int "hieth-gmac hareware rx free queue depth"
+	range 1 65535
+	default "256"
+	help
+	  This option optimize RX performance.
+	  Default is 256.
+	  This option can't larger than CONFIG_HIGMAC_MAX_QUEUE_DEPTH.
+
+config HIGMAC_HWQ_RX_BQ_DEPTH
+	int "hieth-gmac hareware rx busy queue depth"
+	range 1 65535
+	default "544"
+	help
+	  This option optimize RX performance.
+	  Default is 544.
+	  This option can't larger than CONFIG_HIGMAC_MAX_QUEUE_DEPTH.
+
+config HIGMAC_HWQ_TX_BQ_DEPTH
+	int "hieth-gmac hareware tx busy queue depth"
+	range 1 65535
+	default "512"
+	help
+	  This option optimize TX performance.
+	  Default is 512.
+	  This option can't larger than CONFIG_HIGMAC_MAX_QUEUE_DEPTH.
+
+config HIGMAC_HWQ_TX_RQ_DEPTH
+	int "hieth-gmac hareware tx release queue depth"
+	range 1 65535
+	default "1056"
+	help
+	  This option optimize TX performance.
+	  Default is 1056.
+	  This option can't larger than CONFIG_HIGMAC_MAX_QUEUE_DEPTH.
+
+endif # HIETH_GMAC

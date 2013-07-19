@@ -1,0 +1,8 @@
+#===============================================================================
+# export variables
+#===============================================================================
+TARGET_PLATFORM=s40v200
+
+# Name of platform directory with platform specific code (should be built into kernel on a real system) 
+MALI_PLATFORM-s40v200=s40v200
+MALI_SHARED_INTERRUPTS = 1

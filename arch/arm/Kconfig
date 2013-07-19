@@ -4,6 +4,8 @@ config ARM
 	select HAVE_AOUT
 	select HAVE_DMA_API_DEBUG
 	select HAVE_IDE if PCI || ISA || PCMCIA
+	select HAVE_DMA_ATTRS
+	select HAVE_DMA_CONTIGUOUS if (CPU_V6 || CPU_V6K || CPU_V7)
 	select HAVE_MEMBLOCK
 	select RTC_LIB
 	select SYS_SUPPORTS_APM_EMULATION
@@ -45,6 +47,14 @@ config ARM
 config ARM_HAS_SG_CHAIN
 	bool
 
+config NEED_SG_DMA_LENGTH
+	bool
+
+config ARM_DMA_USE_IOMMU
+	select NEED_SG_DMA_LENGTH
+	select ARM_HAS_SG_CHAIN
+	bool
+
 config HAVE_PWM
 	bool
 
@@ -60,6 +70,10 @@ config GENERIC_GPIO
 config ARCH_USES_GETTIMEOFFSET
 	bool
 	default n
+
+config GENERIC_TIME
+	bool
+	default y
 
 config GENERIC_CLOCKEVENTS
 	bool
@@ -390,6 +404,46 @@ config ARCH_CNS3XXX
 	select PCI_DOMAINS if PCI
 	help
 	  Support for Cavium Networks CNS3XXX platform.
+
+config ARCH_GODBOX
+	bool "Hisilicon Godbox family"
+	select ARM_AMBA
+	select HAVE_CLK
+	select COMMON_CLKDEV
+	select CLKDEV_LOOKUP
+	select HAVE_MACH_CLKDEV
+	select NEED_MACH_IO_H
+	select NEED_MACH_MEMORY_H
+	select MIGHT_HAVE_PCI
+	select GENERIC_TIME
+	select GENERIC_CLOCKEVENTS
+
+	help
+	  This enables support for Hisilicon GODBOX platform.
+
+config ARCH_S40
+	bool "Hisilicon S40 family"
+	select ARM_AMBA
+	select HAVE_CLK
+	select CLKDEV_LOOKUP
+	select HAVE_SCHED_CLOCK
+	select GENERIC_TIME
+	select GENERIC_CLOCKEVENTS
+	select ARCH_HAS_CPUFREQ
+	select MIGHT_HAVE_PCI
+	select HAVE_SMP
+	select HAVE_ARM_SCU
+	select MIGHT_HAVE_CACHE_L2X0
+	select NEED_MACH_IO_H
+	select NEED_MACH_MEMORY_H
+	select ARCH_HAS_CPUFREQ
+	help
+	  This enables support for Hisilicon S40 platform.
+	  With the advanced ARM Cortex A9 processor,
+	  S40 serial provides high-speed processing capability.
+	  And S40 serial constains a very powerfull media process engine,
+	  two ethernet interface, EHCI and OHCI controllers, PCI-Express
+	  controller and many peripheral equipments.
 
 config ARCH_GEMINI
 	bool "Cortina Systems Gemini"
@@ -1061,6 +1115,14 @@ source "arch/arm/mach-msm/Kconfig"
 
 source "arch/arm/mach-mv78xx0/Kconfig"
 
+if ARCH_GODBOX
+source "arch/arm/mach-godbox/Kconfig"
+endif
+
+if ARCH_S40
+source "arch/arm/mach-s40/Kconfig"
+endif
+
 source "arch/arm/plat-mxc/Kconfig"
 
 source "arch/arm/mach-mxs/Kconfig"
@@ -1637,6 +1699,7 @@ config HZ
 	default OMAP_32K_TIMER_HZ if ARCH_OMAP && OMAP_32K_TIMER
 	default AT91_TIMER_HZ if ARCH_AT91
 	default SHMOBILE_TIMER_HZ if ARCH_SHMOBILE
+	default HI_S40_HZ if ARCH_S40
 	default 100
 
 config THUMB2_KERNEL
@@ -1749,6 +1812,30 @@ config HIGHMEM
 	  option which should result in a slightly faster kernel.
 
 	  If unsure, say n.
+
+menuconfig SUPPORT_SRAM_MANAGER
+	bool "SRAM manager suppport"
+	default n
+	help
+	  If say y, SRAM manager is supported
+
+menu "SRAM manager config"
+	depends on SUPPORT_SRAM_MANAGER
+
+config SRAM_PHYS_START
+	hex "SRAM physical address"
+	default "0xFFFF2800"
+	depends on SUPPORT_SRAM_MANAGER
+	help
+	  SRAM physical address
+
+config SRAM_PHYS_SIZE
+	hex "SRAM size"
+	default "0x00002800"
+	depends on SUPPORT_SRAM_MANAGER
+	help
+	  SRAM size
+endmenu
 
 config HIGHPTE
 	bool "Allocate 2nd-level pagetables from highmem"
@@ -1896,6 +1983,15 @@ config DEPRECATED_PARAM_STRUCT
 	  This was deprecated in 2001 and announced to live on for 5 years.
 	  Some old boot loaders still use this way.
 
+config ARM_FLUSH_CONSOLE_ON_RESTART
+	bool "Force flush the console on restart"
+	help
+	  If the console is locked while the system is rebooted, the messages
+	  in the temporary logbuffer would not have propogated to all the
+	  console drivers. This option forces the console lock to be
+	  released if it failed to be acquired, which will cause all the
+	  pending messages to be flushed.
+
 endmenu
 
 menu "Boot options"
@@ -1907,6 +2003,21 @@ config USE_OF
 	select IRQ_DOMAIN
 	help
 	  Include support for flattened device tree machine descriptions.
+
+config BUILD_ARM_APPENDED_DTB_IMAGE
+	bool "Build a concatenated zImage/dtb by default"
+	depends on OF
+	help
+	  Enabling this option will cause a concatenated zImage and DTB to
+	  be built by default (instead of a standalone zImage.)  The image
+	  will built in arch/arm/boot/zImage-dtb.<dtb name>
+
+config BUILD_ARM_APPENDED_DTB_IMAGE_NAME
+	string "Default dtb name"
+	depends on BUILD_ARM_APPENDED_DTB_IMAGE
+	help
+	  name of the dtb to append when building a concatenated
+	  zImage/dtb.
 
 # Compressed boot loader in ROM.  Yes, we really want to ask about
 # TEXT and BSS so we preserve their values in the config files.

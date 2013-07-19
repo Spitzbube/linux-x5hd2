@@ -49,6 +49,8 @@
 #include <linux/io.h>
 #include <linux/mtd/partitions.h>
 
+#include "hinfc_common.h"
+
 /* Define default oob placement schemes for large and small page devices */
 static struct nand_ecclayout nand_oob_8 = {
 	.eccbytes = 3,
@@ -2915,6 +2917,7 @@ static struct nand_flash_dev *nand_get_flash_type(struct mtd_info *mtd,
 	int i, maf_idx;
 	u8 id_data[8];
 	int ret;
+	struct nand_flash_dev_ex flash_dev_ex = {{0},0};
 
 	/* Select the device */
 	chip->select_chip(mtd, 0);
@@ -2941,8 +2944,8 @@ static struct nand_flash_dev *nand_get_flash_type(struct mtd_info *mtd,
 
 	chip->cmdfunc(mtd, NAND_CMD_READID, 0x00, -1);
 
-	for (i = 0; i < 2; i++)
-		id_data[i] = chip->read_byte(mtd);
+	for (i = 0; i < 8; i++)
+		flash_dev_ex.ids[i] = id_data[i] = chip->read_byte(mtd);
 
 	if (id_data[0] != *maf_id || id_data[1] != *dev_id) {
 		pr_info("%s: second ID read did not match "
@@ -2950,6 +2953,26 @@ static struct nand_flash_dev *nand_get_flash_type(struct mtd_info *mtd,
 			*maf_id, *dev_id, id_data[0], id_data[1]);
 		return ERR_PTR(-ENODEV);
 	}
+
+	/*
+	 * some nand, the id bytes signification is nonstandard 
+	 * with the linux kernel.
+	 */
+	if (nand_get_flash_type_ex(mtd, chip, &flash_dev_ex)) {
+		type = &flash_dev_ex.flash_dev;
+
+		if (!mtd->name)
+			mtd->name = type->name;
+
+		chip->chipsize = (uint64_t)type->chipsize << 20;
+		mtd->erasesize = type->erasesize;
+		mtd->writesize = type->pagesize;
+		mtd->oobsize   = flash_dev_ex.oobsize;
+		busw = (type->options & NAND_BUSWIDTH_16);
+
+		goto find_type;
+	}
+	/* "type == NULL" we not fount this nand chip in nand spl table. */
 
 	if (!type)
 		type = nand_flash_ids;
@@ -3078,6 +3101,15 @@ ident_done:
 	 */
 	chip->options |= NAND_NO_AUTOINCR;
 
+	/*
+	 * the flash oobsize maybe larger than error correct request oobsize,
+	 * so I resize oobsize.
+	 */
+	flash_dev_ex.oobsize = mtd->oobsize;
+find_type:
+	if (nand_oob_resize)
+		nand_oob_resize(mtd, chip, &flash_dev_ex);
+
 	/* Try to identify manufacturer */
 	for (maf_idx = 0; nand_manuf_ids[maf_idx].id != 0x0; maf_idx++) {
 		if (nand_manuf_ids[maf_idx].id == *maf_id)
@@ -3151,10 +3183,7 @@ ident_done:
 	if (mtd->writesize > 512 && chip->cmdfunc == nand_command)
 		chip->cmdfunc = nand_command_lp;
 
-	pr_info("NAND device: Manufacturer ID:"
-		" 0x%02x, Chip ID: 0x%02x (%s %s)\n", *maf_id, *dev_id,
-		nand_manuf_ids[maf_idx].name,
-		chip->onfi_version ? chip->onfi_params.model : type->name);
+	nand_show_info(&flash_dev_ex, mtd, nand_manuf_ids[maf_idx].name, type->name);
 
 	return type;
 }
@@ -3205,12 +3234,12 @@ int nand_scan_ident(struct mtd_info *mtd, int maxchips,
 		    nand_dev_id != chip->read_byte(mtd))
 			break;
 	}
-	if (i > 1)
-		pr_info("%d NAND chips detected\n", i);
 
 	/* Store the number of chips and calc total size for mtd */
 	chip->numchips = i;
 	mtd->size = i * chip->chipsize;
+
+	nand_show_chip(chip);
 
 	return 0;
 }
@@ -3386,8 +3415,6 @@ int nand_scan_tail(struct mtd_info *mtd)
 		break;
 
 	case NAND_ECC_NONE:
-		pr_warn("NAND_ECC_NONE selected by board driver. "
-			   "This is not recommended!\n");
 		chip->ecc.read_page = nand_read_page_raw;
 		chip->ecc.write_page = nand_write_page_raw;
 		chip->ecc.read_oob = nand_read_oob_std;

@@ -146,6 +146,14 @@ struct otp_info {
 	__u32 locked;
 };
 
+struct mtd_epage_buf {
+	__u64 start;
+	__u32 data_len;
+	__u32 oob_len;
+	unsigned char __user *data_ptr;
+	unsigned char __user *oob_ptr;
+};
+
 /*
  * Note, the following ioctl existed in the past and was removed:
  * #define MEMSETOOBSEL           _IOW('M', 9, struct nand_oobinfo)
@@ -202,6 +210,9 @@ struct otp_info {
  * without OOB, e.g., NOR flash.
  */
 #define MEMWRITE		_IOWR('M', 24, struct mtd_write_req)
+
+#define MEMEWRITEPAGE		_IOWR('M', 25, struct mtd_epage_buf)
+#define MEMEREADPAGE		_IOWR('M', 26, struct mtd_epage_buf)
 
 /*
  * Obsolete legacy interface. Keep it in order not to break userspace

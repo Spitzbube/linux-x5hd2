@@ -58,6 +58,7 @@
 
 #include <net/arp.h>
 #include <net/ip.h>
+#include <net/tcp.h>
 #include <net/route.h>
 #include <net/ip_fib.h>
 #include <net/rtnetlink.h>
@@ -67,20 +68,32 @@
 
 static struct ipv4_devconf ipv4_devconf = {
 	.data = {
+#ifdef CONFIG_SUPPORT_CA
+		[IPV4_DEVCONF_ARP_IGNORE - 1] = 1,
+		[IPV4_DEVCONF_ARPFILTER - 1] = 1,
+#else
 		[IPV4_DEVCONF_ACCEPT_REDIRECTS - 1] = 1,
 		[IPV4_DEVCONF_SEND_REDIRECTS - 1] = 1,
 		[IPV4_DEVCONF_SECURE_REDIRECTS - 1] = 1,
+#endif /* CONFIG_SUPPORT_CA */
 		[IPV4_DEVCONF_SHARED_MEDIA - 1] = 1,
 	},
 };
 
 static struct ipv4_devconf ipv4_devconf_dflt = {
 	.data = {
+#ifdef CONFIG_SUPPORT_CA
+		[IPV4_DEVCONF_ARP_IGNORE - 1] = 1,
+		[IPV4_DEVCONF_ARPFILTER - 1] = 1,
+#else
 		[IPV4_DEVCONF_ACCEPT_REDIRECTS - 1] = 1,
 		[IPV4_DEVCONF_SEND_REDIRECTS - 1] = 1,
 		[IPV4_DEVCONF_SECURE_REDIRECTS - 1] = 1,
+#endif /* CONFIG_SUPPORT_CA */
 		[IPV4_DEVCONF_SHARED_MEDIA - 1] = 1,
+#ifndef CONFIG_SUPPORT_CA
 		[IPV4_DEVCONF_ACCEPT_SOURCE_ROUTE - 1] = 1,
+#endif /* CONFIG_SUPPORT_CA */
 	},
 };
 
@@ -734,6 +747,7 @@ int devinet_ioctl(struct net *net, unsigned int cmd, void __user *arg)
 	case SIOCSIFBRDADDR:	/* Set the broadcast address */
 	case SIOCSIFDSTADDR:	/* Set the destination address */
 	case SIOCSIFNETMASK: 	/* Set the netmask for the interface */
+	case SIOCKILLADDR:	/* Nuke all sockets on this address */
 		ret = -EACCES;
 		if (!capable(CAP_NET_ADMIN))
 			goto out;
@@ -785,7 +799,8 @@ int devinet_ioctl(struct net *net, unsigned int cmd, void __user *arg)
 	}
 
 	ret = -EADDRNOTAVAIL;
-	if (!ifa && cmd != SIOCSIFADDR && cmd != SIOCSIFFLAGS)
+	if (!ifa && cmd != SIOCSIFADDR && cmd != SIOCSIFFLAGS
+	    && cmd != SIOCKILLADDR)
 		goto done;
 
 	switch (cmd) {
@@ -910,6 +925,9 @@ int devinet_ioctl(struct net *net, unsigned int cmd, void __user *arg)
 			}
 			inet_insert_ifa(ifa);
 		}
+		break;
+	case SIOCKILLADDR:	/* Nuke all connections on this address */
+		ret = tcp_nuke_addr(net, (struct sockaddr *) sin);
 		break;
 	}
 done:

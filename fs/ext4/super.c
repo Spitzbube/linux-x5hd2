@@ -1188,6 +1188,7 @@ enum {
 	Opt_inode_readahead_blks, Opt_journal_ioprio,
 	Opt_dioread_nolock, Opt_dioread_lock,
 	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
+	Opt_share,
 };
 
 static const match_table_t tokens = {
@@ -1266,6 +1267,7 @@ static const match_table_t tokens = {
 	{Opt_removed, "reservation"},	/* mount option from ext2/3 */
 	{Opt_removed, "noreservation"}, /* mount option from ext2/3 */
 	{Opt_removed, "journal=%u"},	/* mount option from ext2/3 */
+	{Opt_share, "share"},
 	{Opt_err, NULL},
 };
 
@@ -1441,6 +1443,7 @@ static const struct mount_opts {
 	{Opt_jqfmt_vfsold, QFMT_VFS_OLD, MOPT_QFMT},
 	{Opt_jqfmt_vfsv0, QFMT_VFS_V0, MOPT_QFMT},
 	{Opt_jqfmt_vfsv1, QFMT_VFS_V1, MOPT_QFMT},
+	{Opt_share, 0, MOPT_GTE0},
 	{Opt_err, 0, 0}
 };
 
@@ -1539,6 +1542,8 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
 				return -1;
 			}
 			sbi->s_inode_readahead_blks = arg;
+		} else if (token == Opt_share) {
+			sbi->share = 1;
 		} else if (token == Opt_init_itable) {
 			set_opt(sb, INIT_INODE_TABLE);
 			if (!args->from)
@@ -1781,6 +1786,8 @@ static int _ext4_show_options(struct seq_file *seq, struct super_block *sb,
 	if (nodefs || (test_opt(sb, INIT_INODE_TABLE) &&
 		       (sbi->s_li_wait_mult != EXT4_DEF_LI_WAIT_MULT)))
 		SEQ_OPTS_PRINT("init_itable=%u", sbi->s_li_wait_mult);
+	if (sbi->share)
+		SEQ_OPTS_PUTS("share");
 
 	ext4_show_quota_options(seq, sb);
 	return 0;
@@ -3104,6 +3111,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	}
 	sb->s_fs_info = sbi;
 	sbi->s_mount_opt = 0;
+	sbi->share = 0;
 	sbi->s_resuid = EXT4_DEF_RESUID;
 	sbi->s_resgid = EXT4_DEF_RESGID;
 	sbi->s_inode_readahead_blks = EXT4_DEF_INODE_READAHEAD_BLKS;

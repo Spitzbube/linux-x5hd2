@@ -1,0 +1,91 @@
+#ifndef __S40V200_REG_H__
+#define __S40V200_REG_H__
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include "s40v200_cfg.h"
+
+#define HISI_CRG_BASE    0xF8A22000
+#define HISI_PMC_BASE    0xF8A23000
+
+typedef enum {
+	CRG_REG_ADDR_FREQ_CFG           = 0x0048, /* frequency configure */
+	CRG_REG_ADDR_SOFT_RST           = 0x00d4,
+	CRG_REG_ADDR_LOW_POWER          = 0x0124,
+	CRG_REG_ADDR_SYS_RB             = 0x0154,
+	CRG_REG_ADDR_SIZE               = 0x0200,
+} crg_reg_addr_gpu_addr;
+
+typedef enum {
+	PMC_REG_ADDR_PWM2_DUTY          = 0x0020, /* PERI_PMC8 */
+	PMC_REG_ADDR_PWM_MUL            = 0x0024, /* PERI_PMC9 */
+	PMC_REG_ADDR_CORE1_POWER        = 0x0044,
+	PMC_REG_ADDR_POWER_TIME         = 0x0048, /* PERI_PMC18 */  
+	PMC_REG_ADDR_CORE0_POWER        = 0x004c, /* PERI_PMC19 */
+	PMC_REG_ADDR_COREX_STATUS       = 0x0050, /* PERI_PMC20 */
+	PMC_REG_ADDR_GPU_FREQ           = 0x0054, /* PERI_PMC21 */
+	PMC_REG_ADDR_GPU_CTRL           = 0x0128, /* PERI_PMC74 */
+	PMC_REG_ADDR_SIZE               = 0x0200
+} pmc_reg_addr_gpu_addr;
+
+#define GPU_CLOCK_ON_OFF_MASK                   (0x1)
+#define GPU_CLOCK_ON                            (0x1)
+#define GPU_CLOCK_OFF                           (0x0)
+#define GPU_ALL_RESET_MASK                      (0x1 << 4)
+#define GPU_PP0_RESET_MASK                      (0x1 << 5)
+#define GPU_PP1_RESET_MASK                      (0x1 << 6)
+
+
+#define GPU_PMU_CNT_BYPASS_MASK                 (0x1)
+#define GPU_PMU_BYPASS_MASK                     (0x1 << 1)
+
+
+#define GPU_CORE0_POWERDOWN_REQ_MASK            (0x1 << 3)
+#define GPU_CORE0_PMC_ENABLE_MASK               (0x1 << 7)
+#define GPU_CORE0_WAIT_MTCMOS_ACK_MASK          (0x1 << 8)
+
+
+#define GPU_CORE1_POWERDOWN_REQ_MASK            (0x1 << 3)
+#define GPU_CORE1_PMC_ENABLE_MASK               (0x1 << 7)
+#define GPU_CORE1_WAIT_MTCMOS_ACK_MASK          (0x1 << 8)
+
+#define GPU_CORE0_MTCMOS_ACK_MASK               (0x1 << 6)
+#define GPU_CORE1_MTCMOS_ACK_MASK               (0x1 << 7)
+#define GPU_CORE0_POWER_STATUS_MACHINE_MASK     (0xf << 8)
+#define GPU_CORE1_POWER_STATUS_MACHINE_MASK     (0xf << 12)
+
+#define GPU_CORE0_POWERDOWN_OK                  (0x6 << 8)
+#define GPU_CORE1_POWERDOWN_OK                  (0x6 << 12)
+
+#define GPU_CORE0_POWERUP_OK                    (0x0)
+#define GPU_CORE1_POWERUP_OK                    (0x0)
+
+#define GPU_USE_POWER_GOOD_CPU                  (0x1 << 16)
+#define GPU_FREQ_SW_TREND_PMC_MASK              (0x1 << 18)
+#define GPU_FREQ_SW_PLL_PMC                     (0x1 << 19)
+#define GPU_FREQ_FSM_ENABLE_MASK                (0x1 << 20)
+#define GPU_FREQ_SW_REQ_PMC_MASK                (0x1 << 21)
+#define GPU_FREQ_TIME_WAIT_POWER_GOOD_MASK      (0x0000ffff)
+
+#ifdef S40V200_FPGA
+#define GPU_FREQ_TIME_WAIT_POWER_GOOD_VALUE     0xFFFF   /* 0x7530 for asic   */
+#else
+#define GPU_FREQ_TIME_WAIT_POWER_GOOD_VALUE     0x5fff   /* 0x7530 for asic   */
+#endif
+
+#define GPU_BEGIN_CFG_BYPASS_MASK               (0x1 << 9)
+#define GPU_DIV_CFG_BYPASS_MASK                 (0x1 << 8)
+#define GPU_FREQ_DIV_CFG_CRG_MASK               (0x3 << 4)
+#define GPU_FREQ_SEL_CFG_CRG_MASK               (0x7)
+
+#define GPU_CLK_SW_OK_PMC                       (0x1 << 16)
+
+
+
+#ifdef __cplusplus
+}
+#endif
+#endif
+

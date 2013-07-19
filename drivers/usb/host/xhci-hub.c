@@ -548,6 +548,7 @@ int xhci_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 	struct xhci_bus_state *bus_state;
 	u16 link_state = 0;
 	u16 wake_mask = 0;
+	unsigned selector;
 
 	max_ports = xhci_get_ports(hcd, &port_array);
 	bus_state = &xhci->bus_state[hcd_index(hcd)];
@@ -697,6 +698,7 @@ int xhci_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 			link_state = (wIndex & 0xff00) >> 3;
 		if (wValue == USB_PORT_FEAT_REMOTE_WAKE_MASK)
 			wake_mask = wIndex & 0xff00;
+		selector = wIndex >> 8;
 		wIndex &= 0xff;
 		if (!wIndex || wIndex > max_ports)
 			goto error;
@@ -721,7 +723,7 @@ int xhci_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 			}
 			/* In spec software should not attempt to suspend
 			 * a port unless the port reports that it is in the
-			 * enabled (PED = â€˜1â€™,PLS < â€˜3â€™) state.
+			 * enabled (PED = ¡®1¡¯,PLS < ¡®3¡¯) state.
 			 */
 			temp = xhci_readl(xhci, port_array[wIndex]);
 			if ((temp & PORT_PE) == 0 || (temp & PORT_RESET)
@@ -847,6 +849,23 @@ int xhci_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 			xhci_writel(xhci, temp, port_array[wIndex]);
 
 			temp = xhci_readl(xhci, port_array[wIndex]);
+			break;
+
+		/* For downstream facing ports (these):  one hub port is put
+		 * into test mode according to USB2 11.24.2.13, then the hub
+		 * must be reset (which for root hub now means rmmod+modprobe,
+		 * or else system reboot).  
+		 */
+		case USB_PORT_FEAT_TEST:
+			if (hcd->speed != HCD_USB2)
+				goto error;
+			if (!selector || selector > 5)
+				goto error;
+			xhci_quiesce(xhci);
+			xhci_halt(xhci);
+			temp = xhci_readl(xhci, port_array[wIndex] + 1);
+			temp |= selector << 28;
+			xhci_writel(xhci, temp, port_array[wIndex]+1);
 			break;
 		default:
 			goto error;

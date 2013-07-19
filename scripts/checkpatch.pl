@@ -1575,7 +1575,7 @@ sub process {
 			next;
 		}
 
-		$here .= "FILE: $realfile:$realline:" if ($realcnt != 0);
+		$here .= "FILE: \n$realfile:($realline):" if ($realcnt != 0);
 
 		my $hereline = "$here\n$rawline\n";
 		my $herecurr = "$here\n$rawline\n";

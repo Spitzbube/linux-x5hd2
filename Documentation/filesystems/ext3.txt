@@ -124,6 +124,15 @@ resgid=n		The group ID which may use the reserved blocks.
 
 resuid=n		The user ID which may use the reserved blocks.
 
+uid=n[:m]		Make all files appear to belong to uid n.
+			Useful for e.g. removable media with fstab
+			options 'user,uid=useruid'. The optional second
+			uid m is actually written to the file system.
+
+gid=n[:m]		Make all files appear to belong to gid n.
+			The optional second gid m is actually written to
+			the file system.
+
 sb=n			Use alternate superblock at this location.
 
 quota			These options are ignored by the filesystem. They

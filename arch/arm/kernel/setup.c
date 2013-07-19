@@ -81,6 +81,7 @@ __setup("fpe=", fpe_setup);
 extern void paging_init(struct machine_desc *desc);
 extern void sanity_check_meminfo(void);
 extern void reboot_setup(char *str);
+extern void setup_dma_zone(struct machine_desc *desc);
 
 unsigned int processor_id;
 EXPORT_SYMBOL(processor_id);
@@ -138,6 +139,8 @@ static struct stack stacks[NR_CPUS];
 
 char elf_platform[ELF_PLATFORM_SIZE];
 EXPORT_SYMBOL(elf_platform);
+
+static char boot_sdkversion[64] = "0.0.0.0";
 
 static const char *cpu_name;
 static const char *machine_name;
@@ -742,6 +745,21 @@ static int __init parse_tag_cmdline(const struct tag *tag)
 
 __tagtable(ATAG_CMDLINE, parse_tag_cmdline);
 
+
+static int __init parse_tag_sdkversion(const struct tag *tag)
+{
+	memcpy(boot_sdkversion, &tag->u, sizeof(boot_sdkversion));
+	return 0;
+}
+__tagtable(ATAG_SDKVERSION, parse_tag_sdkversion);
+
+const char * get_sdkversion(void)
+{
+	return boot_sdkversion;
+}
+EXPORT_SYMBOL(get_sdkversion);
+
+
 /*
  * Scan the tag table for this tag, and call its parse function.
  * The tag table is built by the linker from all the __tagtable
@@ -939,12 +957,8 @@ void __init setup_arch(char **cmdline_p)
 	machine_desc = mdesc;
 	machine_name = mdesc->name;
 
-#ifdef CONFIG_ZONE_DMA
-	if (mdesc->dma_zone_size) {
-		extern unsigned long arm_dma_zone_size;
-		arm_dma_zone_size = mdesc->dma_zone_size;
-	}
-#endif
+	setup_dma_zone(mdesc);
+
 	if (mdesc->restart_mode)
 		reboot_setup(&mdesc->restart_mode);
 

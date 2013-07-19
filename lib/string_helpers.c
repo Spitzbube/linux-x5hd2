@@ -8,6 +8,19 @@
 #include <linux/export.h>
 #include <linux/string_helpers.h>
 
+char *ultohstr(u64 size, char *buf, int len)
+{
+	int ix;
+	char *fmt[] = {"%lld", "%lldK", "%lldM", "%lldG", "%lldT", "%lldT"};
+
+	for (ix = 0; (ix < 5) && !(size & 0x3FF) && size; ix++)
+		size = (size >> 10);
+
+	snprintf(buf, len, fmt[ix], (unsigned long long)size);
+	return buf;
+}
+EXPORT_SYMBOL(ultohstr);
+
 /**
  * string_get_size - get the size in the specified units
  * @size:	The size to be converted

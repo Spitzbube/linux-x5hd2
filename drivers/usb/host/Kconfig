@@ -3,6 +3,13 @@
 #
 comment "USB Host Controller Drivers"
 	depends on USB
+if ARCH_S40
+source "drivers/usb/host/Kconfig.s40"
+endif
+
+if ARCH_GODBOX
+source "drivers/usb/host/Kconfig.godbox"
+endif
 
 config USB_C67X00_HCD
 	tristate "Cypress C67x00 HCD support"

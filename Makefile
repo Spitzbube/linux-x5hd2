@@ -65,6 +65,15 @@ ifndef KBUILD_CHECKSRC
   KBUILD_CHECKSRC = 0
 endif
 
+ifdef A
+  ifeq ("$(origin A)", "command line")
+    KBUILD_DOAS = $(A)
+  endif
+endif
+ifndef KBUILD_DOAS
+  KBUILD_DOAS = 0
+endif
+
 # Use make M=dir to specify directory of external module to build
 # Old syntax make ... SUBDIRS=$PWD is still supported
 # Setting the environment variable KBUILD_EXTMOD take precedence
@@ -276,7 +285,7 @@ ifeq ($(MAKECMDGOALS),)
 endif
 
 export KBUILD_MODULES KBUILD_BUILTIN
-export KBUILD_CHECKSRC KBUILD_SRC KBUILD_EXTMOD
+export KBUILD_CHECKSRC KBUILD_SRC KBUILD_EXTMOD KBUILD_DOAS
 
 # Beautify output
 # ---------------------------------------------------------------------------
