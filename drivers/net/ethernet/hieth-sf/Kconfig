@@ -4,8 +4,8 @@
 
 menuconfig HIETH_SWITCH_FABRIC
 	tristate "hieth(switch fabric) family network device support"
-	depends on (ARCH_GODBOX_V1 || ARCH_GODVIEW || ARCH_GODBOX)
-	default y if (ARCH_GODBOX_V1 || ARCH_GODVIEW || ARCH_GODBOX)
+	depends on (ARCH_GODBOX|| ARCH_S40)
+	default y if (ARCH_GODBOX)
 	select PHYLIB
 	help
 	  This selects the hieth family network device.
@@ -20,9 +20,8 @@ config HIETH_TAG
 
 config HIETH_IOBASE
 	hex "hieth IO address"
-	default "0x600D0000" if ARCH_GODBOX_V1
-	default "0x10150000" if ARCH_GODVIEW
 	default "0x600D0000" if ARCH_GODBOX
+	default "0xf9840000" if ARCH_S40
 
 config HIETH_IOSIZE
 	hex "hieth IO size"
@@ -32,20 +31,19 @@ config HIETH_IOSIZE
 
 config HIETH_IRQNUM
 	int "hieth irq number"
-	default "83" if ARCH_GODBOX_V1
-	default "26" if ARCH_GODVIEW
 	default "83" if ARCH_GODBOX
+	default "103" if ARCH_S40
 
 config HIETH_MONITOR_TIMER
 	int "hieth monitor timer"
-	default "10" if (ARCH_GODBOX_V1 || ARCH_GODVIEW || ARCH_GODBOX)
+	default "10" if (ARCH_GODBOX || ARCH_S40)
 	help
 	  hieth monitor timer, default is 10ms.
 
 config HIETH_HWQ_XMIT_DEPTH
 	int "hieth hardware queue send fifo depth"
 	range 1 63
-	default "12" if (ARCH_GODBOX_V1 || ARCH_GODVIEW || ARCH_GODBOX)
+	default "12" if (ARCH_GODBOX || ARCH_S40)
 	help
 	  This selects choice optimize RX or TX performance.
 	  Default is 12(optimize RX performance).
@@ -53,19 +51,19 @@ config HIETH_HWQ_XMIT_DEPTH
 
 config HIETH_MDIO_FRQDIV
 	int "hieth mdio frequency factor"
-	default "2" if (ARCH_GODBOX_V1 || ARCH_GODVIEW || ARCH_GODBOX)
+	default "2" if (ARCH_GODBOX || ARCH_S40)
 
 config HIETH_MII_RMII_MODE_U
 	int "hieth mii/rmii mode for up port (mii:0/rmii:1)"
 	range 0 1
-	default "1" if (ARCH_GODBOX_V1 || ARCH_GODVIEW || ARCH_GODBOX)
+	default "1" if (ARCH_GODBOX || ARCH_S40)
 	help
 	  hieth mode as mii:0/rmii:1 for up port.
 
 config HIETH_MII_RMII_MODE_D
 	int "hieth mii/rmii mode for down port (mii:0/rmii:1)"
 	range 0 1
-	default "1"  if (ARCH_GODBOX_V1 || ARCH_GODVIEW || ARCH_GODBOX)
+	default "1"  if (ARCH_GODBOX || ARCH_S40)
 	help
 	  hieth mode as mii:0/rmii:1 for down port.
 
@@ -105,7 +103,6 @@ config HIETH_RESET_HELPER_EN
 config HIETH_RESET_HELPER_GPIO_BASE
 	hex "hieth reset helper on which gpio group"
 	depends on HIETH_RESET_HELPER_EN
-	default "0x101EF000" if (ARCH_GODBOX_V1)
 	default "0x101EF000" if (ARCH_GODBOX)
 	help
 	  hieth gpio group for reset.
@@ -114,7 +111,6 @@ config HIETH_RESET_HELPER_GPIO_BIT
 	int "hieth reset helper on gpio bit"
 	depends on HIETH_RESET_HELPER_EN
 	range 0 7
-	default "6" if (ARCH_GODBOX_V1)
 	default "6" if (ARCH_GODBOX)
 	help
 	  hieth gpio group bit for reset.
@@ -123,7 +119,6 @@ config HIETH_RESET_HELPER_GPIO_VALUE
 	int "hieth reset helper on gpio value"
 	depends on HIETH_RESET_HELPER_EN
 	range 0 1
-	default "0" if (ARCH_GODBOX_V1)
 	default "0" if (ARCH_GODBOX)
 	help
 	  hieth gpio reset value.

@@ -30,7 +30,6 @@ static int _get_negmode(struct hieth_netdev_local *ld)
 	return old;
 }
 
-
 int hieth_set_linkstat(struct hieth_netdev_local *ld, int mode)
 {
 	unsigned long old;
@@ -58,8 +57,11 @@ int hieth_set_mac_leadcode_cnt_limit(struct hieth_netdev_local *ld, int cnt)
 	int old;
 
 	local_lock(ld);
-	old = hieth_readl_bits(ld, UD_REG_NAME(MAC_TX_IPGCTRL), BITS_PRE_CNT_LIMIT);
-	hieth_writel_bits(ld, cnt, UD_REG_NAME(MAC_TX_IPGCTRL), BITS_PRE_CNT_LIMIT);
+	old =
+	    hieth_readl_bits(ld, UD_REG_NAME(MAC_TX_IPGCTRL),
+			     BITS_PRE_CNT_LIMIT);
+	hieth_writel_bits(ld, cnt, UD_REG_NAME(MAC_TX_IPGCTRL),
+			  BITS_PRE_CNT_LIMIT);
 	local_unlock(ld);
 
 	return old;

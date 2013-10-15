@@ -210,12 +210,19 @@ static struct sock *icmp_sk(struct net *net)
 static inline struct sock *icmp_xmit_lock(struct net *net)
 {
 	struct sock *sk;
+	int cnt = 2;
 
 	local_bh_disable();
 
 	sk = icmp_sk(net);
 
-	if (unlikely(!spin_trylock(&sk->sk_lock.slock))) {
+	while (unlikely(!spin_trylock(&sk->sk_lock.slock))) {
+		/*
+		 * spin_trylock may fail occasionally becasue of irq,
+		 * so try more times.
+		 */
+		if (--cnt)
+			continue;
 		/* This can happen if the output path signals a
 		 * dst_link_failure() for an outgoing ICMP packet.
 		 */

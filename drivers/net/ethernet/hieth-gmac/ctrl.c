@@ -5,48 +5,19 @@
 #include "forward.h"
 #include "ctrl.h"
 
-void higmac_set_macif(struct higmac_netdev_local *ld, int mode, int speed)
-{
-	struct higmac_adapter *adapter = ld->adapter;
-	unsigned long flags;
-	unsigned long v;
-
-	/* enable change: port_mode */
-	higmac_writel_bits(ld, 1, MODE_CHANGE_EN, BIT_MODE_CHANGE_EN);
-	if (speed == 2)/* FIXME */
-		speed = 5;/* 1000M */
-	higmac_writel_bits(ld, speed, PORT_MODE, BITS_PORT_MODE);
-	/* disable change: port_mode */
-	higmac_writel_bits(ld, 0, MODE_CHANGE_EN, BIT_MODE_CHANGE_EN);
-
-	spin_lock_irqsave(&adapter->lock, flags);
-	/* soft reset mac_if */
-	v = readl(adapter->sysctl_iobase);
-	v |= 1 << (ld->index + 10);/* bit10 for macif0 */
-	writel(v, adapter->sysctl_iobase);
-
-	/* config mac_if */
-	if (ld->index)/* eth1 */
-		writel(mode, adapter->fwdctl_iobase + MAC1_IF_CTRL);
-	else
-		writel(mode, adapter->fwdctl_iobase + MAC0_IF_CTRL);
-
-	/* undo reset */
-	v = readl(adapter->sysctl_iobase);
-	v &= ~(1 << (ld->index + 10));
-	writel(v, adapter->sysctl_iobase);
-	spin_unlock_irqrestore(&adapter->lock, flags);
-}
+#ifdef CONFIG_ARCH_S40
+#include "board-s40.c"
+#endif
 
 void higmac_hw_get_mac_addr(struct higmac_netdev_local *ld, unsigned char *mac)
 {
 	unsigned long reg;
 
-	reg = higmac_readl(ld, STATION_ADDR_HIGH);
+	reg = higmac_readl(STATION_ADDR_HIGH);
 	mac[0] = (reg >> 8) & 0xff;
 	mac[1] = reg & 0xff;
 
-	reg = higmac_readl(ld, STATION_ADDR_LOW);
+	reg = higmac_readl(STATION_ADDR_LOW);
 	mac[2] = (reg >> 24) & 0xff;
 	mac[3] = (reg >> 16) & 0xff;
 	mac[4] = (reg >> 8) & 0xff;
@@ -58,69 +29,15 @@ int higmac_hw_set_mac_addr(struct higmac_netdev_local *ld, unsigned char *mac)
 	unsigned long reg;
 
 	reg = mac[1] | (mac[0] << 8);
-	higmac_writel(ld, reg, STATION_ADDR_HIGH);
+	higmac_writel(reg, STATION_ADDR_HIGH);
 
 	reg = mac[5] | (mac[4] << 8) | (mac[3] << 16) | (mac[2] << 24);
-	higmac_writel(ld, reg, STATION_ADDR_LOW);
+	higmac_writel(reg, STATION_ADDR_LOW);
 
 	/* add uc addr in fwd table, use entry0--eth0, entry1--eth1 */
 	fwd_uc_mc_tbl_add(ld, mac, ld->index, ADD_UC);
 
 	return 0;
-}
-#ifndef CONFIG_S40_FPGA
-void higmac_hw_internal_fephy_reset(struct higmac_adapter *adapter)
-{
-	unsigned int v = 0;
-	unsigned long flags;
-
-	/* TODO: internal FEPHY clk and reset, fix later */
-	spin_lock_irqsave(&adapter->lock, flags);
-	v = readl(adapter->sysctl_iobase + OFFSET_OF_FEPHY_CTRL);
-	v |= 0x1; /* use 25MHz clock, enable clk */
-	writel(v, adapter->sysctl_iobase + OFFSET_OF_FEPHY_CTRL);
-	spin_unlock_irqrestore(&adapter->lock, flags);
-
-	udelay(10);
-
-	spin_lock_irqsave(&adapter->lock, flags);
-	v = readl(adapter->sysctl_iobase + OFFSET_OF_FEPHY_CTRL);
-	v &= ~(0x1 << 4); /* clear reset bit */
-	writel(v, adapter->sysctl_iobase + OFFSET_OF_FEPHY_CTRL);
-	spin_unlock_irqrestore(&adapter->lock, flags);
-
-	msleep(20); /* delay at least 15ms for MDIO operation */
-}
-#endif
-void higmac_hw_mac_core_reset(struct higmac_netdev_local *ld)
-{
-	struct higmac_adapter *adapter = ld->adapter;
-	unsigned int v = 0, index;
-	unsigned long flags;
-
-	spin_lock_irqsave(&adapter->lock, flags);
-
-	/* TODO: enable clk here. fpga use fixed clk */
-#ifndef CONFIG_S40_FPGA
-	v = 0x3f; /* enable clk */
-	writel(v, adapter->sysctl_iobase);
-#endif
-	/* set reset bit */
-	index = ld->index + 8;/* 8--reset bit offset */
-	v = readl(adapter->sysctl_iobase);
-	v |= 0x5 << index;
-	writel(v, adapter->sysctl_iobase);
-	spin_unlock_irqrestore(&adapter->lock, flags);
-
-	udelay(50);
-
-	spin_lock_irqsave(&adapter->lock, flags);
-	/* clear reset bit */
-	v = readl(adapter->sysctl_iobase);
-	v &= ~(0x5 << index);
-	writel(v, adapter->sysctl_iobase);
-
-	spin_unlock_irqrestore(&adapter->lock, flags);
 }
 
 /* config hardware queue depth */
@@ -154,6 +71,38 @@ void higmac_hw_set_desc_queue_depth(struct higmac_netdev_local *ld)
 	higmac_writel_bits(ld, 0, TX_RQ_REG_EN, BITS_TX_RQ_DEPTH_EN);
 }
 
+void higmac_hw_phy_gpio_reset(void)
+{
+	u32 gpio_base, gpio_bit, v;
+	int i;
+#define RESET_DATA      (1)
+
+	for (i = 0; i < CONFIG_GMAC_NUMS; i++) {
+		gpio_base = higmac_board_info[i].gpio_base;
+		gpio_bit = higmac_board_info[i].gpio_bit;
+
+		if (!gpio_base)
+			continue;
+
+		gpio_base = IO_ADDRESS(gpio_base);
+
+		/* config gpio[x] dir to output */
+		v = readb(gpio_base + 0x400);
+		v |= (1 << gpio_bit);
+		writeb(v, gpio_base + 0x400);
+
+		/* output 1--0--1 */
+		writeb(RESET_DATA << gpio_bit,
+				gpio_base + (4 << gpio_bit));
+		msleep(20);
+		writeb((!RESET_DATA) << gpio_bit,
+				gpio_base + (4 << gpio_bit));
+		msleep(20);
+		writeb(RESET_DATA << gpio_bit,
+				gpio_base + (4 << gpio_bit));
+	}
+}
+
 void higmac_hw_mac_core_init(struct higmac_netdev_local *ld)
 {
 	/* disable and clear all interrupts */
@@ -166,13 +115,20 @@ void higmac_hw_mac_core_init(struct higmac_netdev_local *ld)
 	/* fix bug for udp and ip error check */
 	writel(CONTROL_WORD_CONFIG, ld->gmac_iobase + CONTROL_WORD);
 
+	writel(0x3ff, ld->gmac_iobase + COL_SLOT_TIME);
+
 	/* FIXME: interrupt when rcv packets >= RX_BQ_INT_THRESHOLD */
 	higmac_writel_bits(ld, RX_BQ_INT_THRESHOLD, IN_QUEUE_TH,
 			BITS_RX_BQ_IN_TH);
+	higmac_writel_bits(ld, TX_RQ_INT_THRESHOLD, IN_QUEUE_TH,
+			BITS_TX_RQ_IN_TH);
 
-	/* FIXME: rx busy queue in timeout threshold */
-	higmac_writel_bits(ld, 0x30000, RX_BQ_IN_TIMEOUT_TH,
+	/* FIXME: rx_bq/tx_rq in timeout threshold */
+	higmac_writel_bits(ld, 0x10000, RX_BQ_IN_TIMEOUT_TH,
 			BITS_RX_BQ_IN_TIMEOUT_TH);
+
+	higmac_writel_bits(ld, 0x50000, TX_RQ_IN_TIMEOUT_TH,
+			BITS_TX_RQ_IN_TIMEOUT_TH);
 
 	higmac_hw_set_desc_queue_depth(ld);
 }
@@ -183,7 +139,7 @@ void higmac_set_rx_fq_hwq_addr(struct higmac_netdev_local *ld,
 	higmac_writel_bits(ld, 1, RX_FQ_REG_EN, \
 		BITS_RX_FQ_START_ADDR_EN);
 
-	higmac_writel(ld, phy_addr, RX_FQ_START_ADDR);
+	higmac_writel(phy_addr, RX_FQ_START_ADDR);
 
 	higmac_writel_bits(ld, 0, RX_FQ_REG_EN, \
 		BITS_RX_FQ_START_ADDR_EN);
@@ -195,7 +151,7 @@ void higmac_set_rx_bq_hwq_addr(struct higmac_netdev_local *ld,
 	higmac_writel_bits(ld, 1, RX_BQ_REG_EN, \
 		BITS_RX_BQ_START_ADDR_EN);
 
-	higmac_writel(ld, phy_addr, RX_BQ_START_ADDR);
+	higmac_writel(phy_addr, RX_BQ_START_ADDR);
 
 	higmac_writel_bits(ld, 0, RX_BQ_REG_EN, \
 		BITS_RX_BQ_START_ADDR_EN);
@@ -207,7 +163,7 @@ void higmac_set_tx_bq_hwq_addr(struct higmac_netdev_local *ld,
 	higmac_writel_bits(ld, 1, TX_BQ_REG_EN, \
 		BITS_TX_BQ_START_ADDR_EN);
 
-	higmac_writel(ld, phy_addr, TX_BQ_START_ADDR);
+	higmac_writel(phy_addr, TX_BQ_START_ADDR);
 
 	higmac_writel_bits(ld, 0, TX_BQ_REG_EN, \
 		BITS_TX_BQ_START_ADDR_EN);
@@ -219,7 +175,7 @@ void higmac_set_tx_rq_hwq_addr(struct higmac_netdev_local *ld,
 	higmac_writel_bits(ld, 1, TX_RQ_REG_EN, \
 		BITS_TX_RQ_START_ADDR_EN);
 
-	higmac_writel(ld, phy_addr, TX_RQ_START_ADDR);
+	higmac_writel(phy_addr, TX_RQ_START_ADDR);
 
 	higmac_writel_bits(ld, 0, TX_RQ_REG_EN, \
 		BITS_TX_RQ_START_ADDR_EN);
@@ -237,7 +193,7 @@ int higmac_read_irqstatus(struct higmac_netdev_local *ld)
 {
 	int status;
 
-	status = higmac_readl(ld, RAW_PMU_INT);
+	status = higmac_readl(RAW_PMU_INT);
 
 	return status;
 }
@@ -246,30 +202,22 @@ int higmac_clear_irqstatus(struct higmac_netdev_local *ld, int irqs)
 {
 	int status;
 
-	higmac_writel(ld, irqs, RAW_PMU_INT);
+	higmac_writel(irqs, RAW_PMU_INT);
 	status = higmac_read_irqstatus(ld);
 
 	return status;
 }
 
-int higmac_irq_enable(struct higmac_netdev_local *ld, int irqs)
+void higmac_irq_enable(struct higmac_netdev_local *ld)
 {
-	int old;
-
-	old = higmac_readl(ld, ENA_PMU_INT);
-	higmac_writel(ld, old | irqs, ENA_PMU_INT);
-
-	return old;
+	higmac_writel(RX_BQ_IN_INT | RX_BQ_IN_TIMEOUT_INT
+			| TX_RQ_IN_INT | TX_RQ_IN_TIMEOUT_INT,
+			ENA_PMU_INT);
 }
 
-int higmac_irq_disable(struct higmac_netdev_local *ld, int irqs)
+void higmac_irq_disable(struct higmac_netdev_local *ld)
 {
-	int old;
-
-	old = higmac_readl(ld, ENA_PMU_INT);
-	higmac_writel(ld, old & (~irqs), ENA_PMU_INT);
-
-	return old;
+	higmac_writel(0, ENA_PMU_INT);
 }
 
 void higmac_hw_desc_enable(struct higmac_netdev_local *ld)
@@ -312,10 +260,8 @@ int higmac_xmit_release_skb(struct higmac_netdev_local *ld)
 	dma_addr_t dma_addr;
 	int ret = 0;
 
-	tx_rq_wr_offset = higmac_readl_bits(ld, TX_RQ_WR_ADDR,
-			BITS_TX_RQ_WR_ADDR);/* logic write */
-	tx_rq_rd_offset = higmac_readl_bits(ld, TX_RQ_RD_ADDR,
-			BITS_TX_RQ_RD_ADDR);/* software read */
+	tx_rq_wr_offset = higmac_readl(TX_RQ_WR_ADDR);/* logic write */
+	tx_rq_rd_offset = higmac_readl(TX_RQ_RD_ADDR);/* software read */
 
 	while (tx_rq_rd_offset != tx_rq_wr_offset) {
 		pos = tx_rq_rd_offset >> 5;
@@ -326,7 +272,7 @@ reload:
 		if (!skb) {
 			pr_err("tx_rq: desc consistent warning:"
 				"tx_rq_rd_offset = 0x%x, "
-				"tx_rq_wr_offset = 0x%x"
+				"tx_rq_wr_offset = 0x%x, "
 				"tx_fq.skb[%d](0x%p)\n",
 				tx_rq_rd_offset, tx_rq_wr_offset,
 				pos, ld->tx_bq.skb[pos]);
@@ -340,6 +286,13 @@ reload:
 			goto reload;
 		}
 
+		if (ld->tx_bq.skb[pos] != skb) {
+			pr_err("wired, tx skb[%d](%p) != skb(%p)\n",
+					pos, ld->tx_bq.skb[pos], skb);
+			if (ld->tx_bq.skb[pos] == SKB_MAGIC)
+				goto next;
+		}
+
 		/* data consistent check */
 		ld->tx_rq.use_cnt++;
 		if (ld->tx_rq.use_cnt != tx_rq_desc->reserve5)
@@ -350,21 +303,16 @@ reload:
 		dma_addr = tx_rq_desc->data_buff_addr;
 		dma_unmap_single(ld->dev, dma_addr, skb->len, DMA_TO_DEVICE);
 
-		if (ld->tx_bq.skb[pos] != skb)
-			pr_err("wired, tx skb[%d](%p) != skb(%p)\n",
-					pos, ld->tx_bq.skb[pos], skb);
-
 		ld->tx_bq.skb[pos] = NULL;
 		dev_kfree_skb_any(skb);
-
+next:
 		tx_rq_desc->skb_buff_addr = 0;
 
 		tx_rq_rd_offset += DESC_SIZE;
 		if (tx_rq_rd_offset == (HIGMAC_HWQ_TX_RQ_DEPTH << 5))
 				tx_rq_rd_offset = 0;
 
-		higmac_writel_bits(ld, tx_rq_rd_offset,
-				TX_RQ_RD_ADDR, BITS_TX_RQ_RD_ADDR);
+		higmac_writel(tx_rq_rd_offset, TX_RQ_RD_ADDR);
 	}
 
 	return ret;
@@ -374,11 +322,12 @@ int higmac_xmit_real_send(struct higmac_netdev_local *ld, struct sk_buff *skb)
 {
 	int tx_bq_wr_offset, tx_bq_rd_offset, tmp, pos;
 	struct higmac_desc *tx_bq_desc;
+	unsigned long txflags;
 
-	tx_bq_wr_offset = higmac_readl_bits(ld, TX_BQ_WR_ADDR,
-			BITS_TX_BQ_WR_ADDR);/* software write pointer */
-	tx_bq_rd_offset = higmac_readl_bits(ld, TX_BQ_RD_ADDR,
-			BITS_TX_BQ_RD_ADDR);/* logic read pointer */
+	/* software write pointer */
+	tx_bq_wr_offset = higmac_readl(TX_BQ_WR_ADDR);
+	/* logic read pointer */
+	tx_bq_rd_offset = higmac_readl(TX_BQ_RD_ADDR);
 
 	pos = tx_bq_wr_offset >> 5;
 	tmp = tx_bq_wr_offset + DESC_SIZE;
@@ -393,7 +342,13 @@ int higmac_xmit_real_send(struct higmac_netdev_local *ld, struct sk_buff *skb)
 		return -EBUSY;
 	}
 
-	ld->tx_bq.skb[pos] = skb;
+	spin_lock_irqsave(&ld->txlock, txflags);
+	if (unlikely(ld->tx_bq.skb[pos])) {
+		spin_unlock_irqrestore(&ld->txlock, txflags);
+		return -EBUSY;
+	} else
+		ld->tx_bq.skb[pos] = skb;
+	spin_unlock_irqrestore(&ld->txlock, txflags);
 
 	tx_bq_desc = ld->tx_bq.desc + pos;
 
@@ -411,9 +366,8 @@ int higmac_xmit_real_send(struct higmac_netdev_local *ld, struct sk_buff *skb)
 	tx_bq_wr_offset += DESC_SIZE;
 	if (tx_bq_wr_offset >= (HIGMAC_HWQ_TX_BQ_DEPTH << 5))
 		tx_bq_wr_offset = 0;
-
-	higmac_writel_bits(ld, tx_bq_wr_offset,
-			TX_BQ_WR_ADDR, BITS_TX_BQ_WR_ADDR);
+	/* update software write pointer */
+	higmac_writel(tx_bq_wr_offset, TX_BQ_WR_ADDR);
 
 	return 0;
 }
@@ -427,10 +381,8 @@ int higmac_feed_hw(struct higmac_netdev_local *ld)
 	int i = 0;
 	int start, end, num = 0;
 
-	rx_fq_wr_offset = higmac_readl_bits(ld, RX_FQ_WR_ADDR,
-			BITS_RX_FQ_WR_ADDR);/* software write pointer */
-	rx_fq_rd_offset = higmac_readl_bits(ld, RX_FQ_RD_ADDR,
-			BITS_RX_FQ_RD_ADDR);/* logic read pointer */
+	rx_fq_wr_offset = higmac_readl(RX_FQ_WR_ADDR);/* software write pointer */
+	rx_fq_rd_offset = higmac_readl(RX_FQ_RD_ADDR);/* logic read pointer */
 
 	if (rx_fq_wr_offset >= rx_fq_rd_offset)
 		wr_rd_dist = (HIGMAC_HWQ_RX_FQ_DEPTH << 5)
@@ -454,7 +406,7 @@ int higmac_feed_hw(struct higmac_netdev_local *ld)
 		if (ld->rx_fq.skb[pos])
 			goto out;
 		else {
-			skb = higmac_dev_alloc_skb(ld);
+			skb = dev_alloc_skb(SKB_SIZE);
 			if (!skb)
 				goto out;
 
@@ -481,8 +433,7 @@ int higmac_feed_hw(struct higmac_netdev_local *ld)
 		if (rx_fq_wr_offset >= (HIGMAC_HWQ_RX_FQ_DEPTH << 5))
 			rx_fq_wr_offset = 0;
 
-		higmac_writel_bits(ld, rx_fq_wr_offset, RX_FQ_WR_ADDR,
-				BITS_RX_FQ_WR_ADDR);
+		higmac_writel(rx_fq_wr_offset, RX_FQ_WR_ADDR);
 	}
 out:
 	end = rx_fq_wr_offset >> 5;

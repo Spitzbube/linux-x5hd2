@@ -13,8 +13,7 @@ static void hi_mci_sys_ctrl_init(struct himci_host *host)
 
 	/* enable SDIO clock */
 	tmp_reg = himci_readl(IO_ADDRESS(SYS_CTRL_BASE + PERI_CRG46));
-	tmp_reg &= ~(SDIO_SRST_REQ | SDIO_CKEN | SDIO_HCLKEN
-		| SDIO_CLK_PCTRL);
+	tmp_reg &= ~(SDIO_SRST_REQ | SDIO_CKEN | SDIO_HCLKEN | SDIO_CLK_PCTRL);
 	tmp_reg |= SDIO_CKEN | SDIO_HCLKEN | SDIO_CLK_50M;
 	himci_writel(tmp_reg, IO_ADDRESS(SYS_CTRL_BASE + PERI_CRG46));
 

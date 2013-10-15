@@ -5,8 +5,8 @@
  *    Create By Czyong
 ******************************************************************************/
 
-#include "hinfc_common_os.h"
-#include "hinfc_common.h"
+#include "hinfc_gen_os.h"
+#include "hinfc_gen.h"
 
 /*****************************************************************************/
 
@@ -63,6 +63,7 @@ struct nand_flash_special_dev
 #define BBP_LAST_PAGE                    0x01
 #define BBP_FIRST_PAGE                   0x02
 	unsigned int badblock_pos;
+	int flags;
 };
 
 /*****************************************************************************/
@@ -135,6 +136,7 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.options   = 0,
 		.read_retry_type = NAND_RR_MICRON,
 		.badblock_pos    = BBP_FIRST_PAGE,
+		.flags = NAND_RANDOMIZER | NAND_SYNCHRONOUS | NAND_ASYNCHRONOUS,
 	},
 	{        /* MLC 40bit/1k */
 		.name      = "MT29F32G08CBADA",
@@ -148,6 +150,7 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.options   = 0,
 		.read_retry_type = NAND_RR_MICRON,
 		.badblock_pos    = BBP_FIRST_PAGE,
+		.flags = NAND_RANDOMIZER,
 	},
 	{        /* SLC 4bit/512 */
 		.name      = "MT29F8G08ABxBA",
@@ -333,6 +336,7 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.options   = 0,
 		.read_retry_type = NAND_RR_TOSHIBA_24nm,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
+		.flags = NAND_RANDOMIZER,
 	},
 	{       /* MLC 40bit/1k */
 		.name      = "TC58NVG6D2GTA00",
@@ -359,6 +363,7 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.options   = 0,
 		.read_retry_type = NAND_RR_TOSHIBA_24nm,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
+		.flags = NAND_RANDOMIZER,
 	},
 	{       /* MLC 19nm */
 		.name      = "TC58TEG5DCJTA00 19nm",
@@ -372,6 +377,7 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.options   = 0,
 		.read_retry_type = NAND_RR_TOSHIBA_24nm,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
+		.flags = NAND_RANDOMIZER | NAND_SYNCHRONOUS | NAND_ASYNCHRONOUS,
 	},
 	{       /* SLC 8bit/512 */
 		.name      = "TC58NVG0S3HTA00",
@@ -403,11 +409,12 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.options   = 0,
 		.read_retry_type = NAND_RR_TOSHIBA_24nm,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
+		.flags = NAND_RANDOMIZER,
 	},
 
 	/******************************* Samsung ******************************/
 	{       /* MLC 8bit/512B */
-		.name     = "K9xxG0F8UxD",
+		.name     = "K9LB(HC/PD/MD)G08U0(1)D",
 		.id       = {0xEC, 0xD7, 0xD5, 0x29, 0x38, 0x41, 0x00, 0x00},
 		.length   = 6,
 		.chipsize = _4G,
@@ -480,6 +487,7 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.options   = 0,
 		.read_retry_type = NAND_RR_SAMSUNG,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
+		.flags = NAND_RANDOMIZER,
 	},
 	{        /* MLC 40bit/1k */
 		.name      = "K9GBG08U0B",
@@ -493,6 +501,7 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.options   = 0,
 		.read_retry_type = NAND_RR_SAMSUNG,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
+		.flags = NAND_RANDOMIZER,
 	},
 
 	/*********************************** Hynix ****************************/
@@ -535,6 +544,7 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.options   = 0,
 		.read_retry_type = NAND_RR_HYNIX_BG_BDIE,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
+		.flags = NAND_RANDOMIZER,
 	},
 	{        /* MLC 40bit/1k */
 		.name      = "H27UCG8T2A",
@@ -548,6 +558,7 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.options   = 0,
 		.read_retry_type = NAND_RR_HYNIX_CG_ADIE,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
+		.flags = NAND_RANDOMIZER,
 	},
 	{        /* MLC 40bit/1k */
 		.name      = "H27UBG8T2C",
@@ -561,6 +572,7 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.options   = 0,
 		.read_retry_type = NAND_RR_HYNIX_BG_CDIE,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
+		.flags = NAND_RANDOMIZER,
 	},
 
 	/********************** MISC ******************************************/
@@ -641,6 +653,7 @@ struct nand_flash_dev * nand_get_flash_type_ex(struct mtd_info *mtd,
 		}
 
 		flash_dev_ex->read_retry_type = spl_dev->read_retry_type;
+		flash_dev_ex->flags = spl_dev->flags;
 
 		flash_type->id = byte[1];
 		flash_type->chipsize = (unsigned long)(spl_dev->chipsize >> 20);
@@ -662,7 +675,7 @@ void nand_show_info(struct nand_flash_dev_ex *flash_dev_ex,
 
 	PR_MSG("Nand: %s %s ", vendor, chipname);
 
-	if (flash_dev_ex->is_randomizer)
+	if (IS_RANDOMIZER(flash_dev_ex))
 		PR_MSG("Randomizer ");
 
 	if (flash_dev_ex->read_retry_type != NAND_RR_NONE)
@@ -675,7 +688,7 @@ void nand_show_info(struct nand_flash_dev_ex *flash_dev_ex,
 	PR_MSG("Block:%sB ", ultohstr(mtd->erasesize, buf, sizeof(buf)));
 	PR_MSG("Page:%sB ", ultohstr(mtd->writesize, buf, sizeof(buf)));
 	PR_MSG("OOB:%sB ", ultohstr(flash_dev_ex->oobsize, buf, sizeof(buf)));
-	PR_MSG("ECC:%s ", get_ecctype_str(flash_dev_ex->ecctype));
+	PR_MSG("ECC:%s ", nand_ecc_name(flash_dev_ex->ecctype));
 }
 /*****************************************************************************/
 

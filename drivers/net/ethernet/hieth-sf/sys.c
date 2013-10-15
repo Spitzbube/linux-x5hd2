@@ -9,8 +9,13 @@
 #include "glb.h"
 #include "sys.h"
 
-#include "sys-godbox.c"
+#ifdef CONFIG_ARCH_GODBOX
+#  include "sys-godbox.c"
+#endif
 
+#ifdef CONFIG_ARCH_S40
+#  include "sys-s40.c"
+#endif
 /********************************************************************************/
 
 void hieth_sys_allstop(void)

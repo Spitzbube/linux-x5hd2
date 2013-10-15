@@ -5,7 +5,7 @@ static int wait_mdio_ready(struct hieth_mdio_local *ld)
 {
 	int timeout_us = 1000;
 
-	while(--timeout_us && !test_mdio_ready(ld))
+	while (--timeout_us && !test_mdio_ready(ld))
 		udelay(1);
 
 	return timeout_us;
@@ -14,40 +14,43 @@ static int wait_mdio_ready(struct hieth_mdio_local *ld)
 int hieth_mdio_read(struct hieth_mdio_local *ld, int phy_addr, int regnum)
 {
 	int val = 0;
-	hieth_assert( (!(phy_addr & (~0x1F))) && (!(regnum & (~0x1F))) );
+	hieth_assert((!(phy_addr & (~0x1F))) && (!(regnum & (~0x1F))));
 
 	local_lock(ld);
 
-	if(!wait_mdio_ready(ld)) {
+	if (!wait_mdio_ready(ld)) {
 		hieth_error("mdio busy");
 		goto error_exit;
 	}
 
 	mdio_start_phyread(ld, phy_addr, regnum);
 
-	if(wait_mdio_ready(ld))
+	if (wait_mdio_ready(ld))
 		val = mdio_get_phyread_val(ld);
-	else hieth_error("read timeout");
+	else
+		hieth_error("read timeout");
 
 error_exit:
 
 	local_unlock(ld);
 
-	hieth_trace(4, "phy_addr = %d, regnum = %d, val = 0x%04x", phy_addr, regnum, val);
+	hieth_trace(4, "phy_addr = %d, regnum = %d, val = 0x%04x", phy_addr,
+		    regnum, val);
 
 	return val;
 }
 
-int hieth_mdio_write(struct hieth_mdio_local *ld, int phy_addr, int regnum, int val)
+int hieth_mdio_write(struct hieth_mdio_local *ld, int phy_addr, int regnum,
+		     int val)
 {
 	int ret = 0;
-	hieth_assert( (!(phy_addr & (~0x1F))) && (!(regnum & (~0x1F))) );
+	hieth_assert((!(phy_addr & (~0x1F))) && (!(regnum & (~0x1F))));
 
 	hieth_trace(4, "phy_addr = %d, regnum = %d", phy_addr, regnum);
 
 	local_lock(ld);
 
-	if(!wait_mdio_ready(ld)) {
+	if (!wait_mdio_ready(ld)) {
 		hieth_error("mdio busy");
 		ret = -1;
 		goto error_exit;

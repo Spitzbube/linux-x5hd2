@@ -59,7 +59,8 @@ struct hieth_mdio_local {
 	} while(0)
 
 int hieth_mdio_read(struct hieth_mdio_local *ld, int phy_addr, int regnum);
-int hieth_mdio_write(struct hieth_mdio_local *ld, int phy_addr, int regnum, int val);
+int hieth_mdio_write(struct hieth_mdio_local *ld, int phy_addr, int regnum,
+		     int val);
 int hieth_mdio_reset(struct hieth_mdio_local *ld);
 int hieth_mdio_init(struct hieth_mdio_local *ld);
 void hieth_mdio_exit(struct hieth_mdio_local *ld);

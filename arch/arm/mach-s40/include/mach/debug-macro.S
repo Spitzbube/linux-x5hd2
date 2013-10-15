@@ -1,8 +1,8 @@
 #include <mach/platform.h>
 
-	.macro  addruart, rp, rv, tmp	
-	ldr	\rp, =REG_BASE_CUR_UART @physical base
-	ldr	\rv, =IO_ADDRESS(REG_BASE_CUR_UART) @virtual base
+	.macro  addruart, rp, rv, tmp
+	ldr	\rp, =CONFIG_DEFAULT_UART_BASE_ADDR @physical base
+	ldr	\rv, =IO_ADDRESS(CONFIG_DEFAULT_UART_BASE_ADDR) @virtual base
 	.endm
 
 #include <asm/hardware/debug-pl01x.S>

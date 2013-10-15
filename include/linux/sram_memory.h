@@ -9,7 +9,8 @@
 
 #ifndef SRAM_MEMORYH
 #define SRAM_MEMORYH
-void *sram_alloc(unsigned long size, unsigned int *phys_addr, unsigned long flags);
+void *sram_alloc(unsigned long size, unsigned int *phys_addr,
+		 unsigned long flags);
 void sram_free(void *vaddr);
 int sram_pm_save(void);
 int sram_pm_resume(void);

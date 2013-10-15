@@ -270,7 +270,15 @@ store_resume:
     ldr	r5, =(__virt_to_phys(resume_code))
     ldr r4, =hi_sc_virtbase
     ldr r4, [r4]
-    str r5, [r4, #REG_SC_GEN9]
+    str r5, [r4, #REG_SC_GEN30]
+    ldr r0, =IO_ADDRESS(0xf8a9007C)
+    ldr r0, [r0]
+    and r0, r0, #0xFF00
+    ldr r1, =0x4000
+    cmp r0, r1
+    bne enable_mcu
+    ldr r5, =0x0
+    str r5, [r4, #REG_SC_GEN28]
 
 enable_mcu:
     ldr r1, =IO_ADDRESS(MCU_START_CTRL)

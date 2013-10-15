@@ -572,5 +572,6 @@ config MTD_NAND_FSMC
 	  Flexible Static Memory Controller (FSMC)
 
 source "drivers/mtd/nand/hinfc504/Kconfig"
+source "drivers/mtd/nand/hinfc610/Kconfig"
 
 endif # MTD_NAND

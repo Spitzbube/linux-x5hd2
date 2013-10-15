@@ -143,7 +143,7 @@
 /* DMA address align with 32 bytes. */
 #define HINFC504_DMA_ALIGN                            64
 /*****************************************************************************/
-#include "../hinfc_common.h"
+#include "../hinfc_gen.h" 
 
 #undef  READ
 #define READ           1
@@ -171,7 +171,6 @@ struct hinfc_host
 	void __iomem *iobase;
 	struct device *dev;
 
-	int is_randomizer;
 	unsigned int offset;
 	unsigned int command;
 
@@ -198,7 +197,6 @@ struct hinfc_host
 	char *buforg;
 	char *buffer;
 	int   version; /* controller version */
-	int   add_partition;
 
 	int  need_rr_data;
 #define HINFC_READ_RETRY_DATA_LEN         128
@@ -207,8 +205,9 @@ struct hinfc_host
 #define HINFC_BAD_BLOCK_POS              0
 	unsigned char *bbm;   /* nand bad block mark */
 	unsigned short *epm;  /* nand empty page mark */
-
-	unsigned int uc_er;
+	unsigned short epmvalue; /* nand empty page value */
+	unsigned int flags;   /* current page status */
+	unsigned int ecc_status;
 
 	struct clk *clk;
 
@@ -224,10 +223,23 @@ struct hinfc_host
 				     int ecc_en,
 				     int randomizer_en);
 
-	void (*detect_ecc)(struct hinfc_host *host);
-
 	struct read_retry_t *read_retry;
 };
+
+#define HINFC504_UC_ECC               0x01
+#define HINFC504_BAD_BLOCK            0x02
+#define HINFC504_EMPTY_PAGE           0x04
+
+#define GET_UC_ECC(_host)          ((_host)->ecc_status & HINFC504_UC_ECC)
+#define SET_UC_ECC(_host, _value)  { if (_value) { \
+	(_host)->ecc_status |= HINFC504_UC_ECC;} else { (_host)->ecc_status &= ~HINFC504_UC_ECC;}}
+
+#define GET_BAD_BLOCK(_host)      ((_host)->ecc_status & HINFC504_BAD_BLOCK)
+#define SET_BAD_BLOCK(_host)      ((_host)->ecc_status |= HINFC504_BAD_BLOCK)
+
+#define GET_EMPTY_PAGE(_host)     ((_host)->ecc_status & HINFC504_EMPTY_PAGE)
+#define SET_EMPTY_PAGE(_host)     ((_host)->ecc_status |= HINFC504_EMPTY_PAGE)
+
 /*****************************************************************************/
 
 #define HINFC504_READ_1CMD_0ADD_NODATA \
@@ -305,34 +317,6 @@ do { \
 
 #define GET_PAGE_INDEX(host) \
 	((host->addr_value[0] >> 16) | (host->addr_value[1] << 16))
-
-#if !(defined(CONFIG_HINFC504_DBG_NAND_PROC_FILE) \
-	|| defined(CONFIG_HINFC504_DBG_NAND_EC_NOTICE))
-#  define dbg_nand_ec_notice(_p0)
-#  define dbg_nand_ec_init()
-#else
-void dbg_nand_ec_notice(struct hinfc_host *host);
-void dbg_nand_ec_init(void);
-#endif /* !(defined(CONFIG_HINFC504_DBG_NAND_PROC_FILE) \
-	|| defined(CONFIG_HINFC504_DBG_NAND_EC_NOTICE)) */
-
-#if !defined(CONFIG_HINFC504_DBG_NAND_PROC_FILE)
-#  define dbg_nand_proc_init()
-#  define dbg_nand_proc_save_logs(_p0, _p1)
-#else
-int dbg_nand_proc_init(void);
-int dbg_nand_proc_save_logs(struct hinfc_host *host, char *op);
-#endif /* !defined(CONFIG_HINFC504_DBG_NAND_PROC_FILE) */
-
-#if !defined(CONFIG_HINFC504_DBG_NAND_PE_PROC_FILE)
-#  define dbg_nand_pe_erase(_p0)
-#  define dbg_nand_pe_proc_init(_p0, _p1, _p2)
-#else
-int dbg_nand_pe_erase(struct hinfc_host *host);
-int dbg_nand_pe_proc_init(unsigned long long chipsize,
-			  unsigned int blocksize,
-			  unsigned int pagesize);
-#endif /* !defined(CONFIG_HINFC504_DBG_NAND_PE_PROC_FILE) */
 
 /*****************************************************************************/
 

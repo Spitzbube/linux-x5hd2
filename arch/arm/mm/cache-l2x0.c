@@ -634,7 +634,7 @@ int __init l2x0_of_init(u32 aux_val, u32 aux_mask)
 
 static __u32 aux_ctrl;
 static __u32 latency_ctrl;
-
+static __u32 prefetch_ctrl;
 /*
  *  hi_pm_disable_l2cache()/hi_pm_enable_l2cache() is designed to
  *  disable and enable l2-cache during Suspend-Resume phase
@@ -645,6 +645,8 @@ int hi_pm_disable_l2cache(void)
 	aux_ctrl = readl_relaxed(l2x0_base + L2X0_AUX_CTRL);
 
 	latency_ctrl = readl_relaxed(l2x0_base + L2X0_DATA_LATENCY_CTRL);
+
+	prefetch_ctrl = readl_relaxed(l2x0_base + L2X0_PREFETCH_CTRL);
 
 	/* flush cache all */
 	l2x0_flush_all();
@@ -672,6 +674,7 @@ int hi_pm_enable_l2cache(void)
 	/* restore aux control register */
 	writel_relaxed(aux_ctrl, l2x0_base + L2X0_AUX_CTRL);
 	writel_relaxed(latency_ctrl, l2x0_base + L2X0_DATA_LATENCY_CTRL);
+	writel_relaxed(prefetch_ctrl, l2x0_base + L2X0_PREFETCH_CTRL);
 
 	/* invalidate l2x0 cache */
 	l2x0_inv_all();

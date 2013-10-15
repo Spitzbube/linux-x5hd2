@@ -3,16 +3,16 @@
 #define N			(31)
 #define FILTERS			(4)
 struct pm_config {
-	char index;		/* bit0--eth0 bit1--eth1 */
-	char uc_pkts_enable;
-	char magic_pkts_enable;
-	char wakeup_pkts_enable;
+	unsigned char index;		/* bit0--eth0 bit1--eth1 */
+	unsigned char uc_pkts_enable;
+	unsigned char magic_pkts_enable;
+	unsigned char wakeup_pkts_enable;
 	struct {
-		unsigned int	mask_bytes : N;/* cann't set to 0 */
-		unsigned int	reserved   : 1;
-		char		offset;	/* >= 12 */
-		char		value[N];/* byte string */
-		char		valid;	/* valid filter */
+		unsigned int	mask_bytes : N;
+		unsigned int	reserved   : 1;/* userspace ignore this bit */
+		unsigned char	offset;	/* >= 12 */
+		unsigned char	value[N];/* byte string */
+		unsigned char	valid;	/* valid filter */
 	} filter[FILTERS];
 };
 
@@ -101,13 +101,13 @@ int pmt_config_gmac(struct pm_config *config, struct higmac_netdev_local *ld)
 /*
  * filter.valid		mask.valid	mask_bytes	effect
  *	0		*		*		no use the filter
- *	1		0		*		all pkts can wake-up
+ *	1		0		*		all pkts can wake-up(non-exist)
  *	1		1		0		all pkts can wake-up
  *	1		1		!0		normal filter
  */
 	/* setup filter */
 	for (i = 0; i < FILTERS; i++) {
-		if (config->filter[i].valid && config->filter[i].mask_bytes) {
+		if (config->filter[i].valid) {
 			if (config->filter[i].offset < 12)
 				continue;
 			/* offset and valid bit */
@@ -121,6 +121,7 @@ int pmt_config_gmac(struct pm_config *config, struct higmac_netdev_local *ld)
 			 * 0 is enable
 			 */
 			v = config->filter[i].mask_bytes;
+			v &= ~(1 << 31);
 			writel(v, ld->gmac_iobase + reg_mask);
 
 			/* crc */
@@ -190,13 +191,13 @@ int pmt_config(struct pm_config *config)
 	return ret;
 }
 
-void inline pmt_enter(struct higmac_netdev_local *ld)
+bool inline pmt_enter(struct higmac_netdev_local *ld)
 {
-	int v;
+	int v, pm = false;
 	unsigned long flags;
 
 	spin_lock_irqsave(&ld->pmtlock, flags);
-	if (pm_state[ld->index]) {
+	if (pm_state[ld->index] == PM_SET) {
 
 		v = readl(ld->gmac_iobase + PMT_CTRL);
 		v |= 1 << 0;	/* enter power down */
@@ -205,8 +206,10 @@ void inline pmt_enter(struct higmac_netdev_local *ld)
 		writel(v, ld->gmac_iobase + PMT_CTRL);
 
 		pm_state[ld->index] = PM_CLEAR;
+		pm = true;
 	}
 	spin_unlock_irqrestore(&ld->pmtlock, flags);
+	return pm;
 }
 
 void inline pmt_exit(struct higmac_netdev_local *ld)

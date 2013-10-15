@@ -160,6 +160,7 @@ static int hisfc_os_add_paratitions(struct hisfc_host *host)
 {
 	int ix;
 	int nr_parts = 0;
+	int ret = 0;
 	struct mtd_partition *parts = NULL;
 
 #ifdef CONFIG_MTD_CMDLINE_PARTS
@@ -185,7 +186,14 @@ static int hisfc_os_add_paratitions(struct hisfc_host *host)
 	}
 
 	host->add_partition = 1;
-	return add_mtd_partitions(host->mtd, parts, nr_parts);
+	ret = add_mtd_partitions(host->mtd, parts, nr_parts);
+
+	if (parts) {
+		kfree(parts);
+		parts = NULL;
+	}
+
+	return ret;
 }
 /*****************************************************************************/
 

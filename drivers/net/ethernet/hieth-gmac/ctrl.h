@@ -1,20 +1,9 @@
 #ifndef __HIGMAC_CTRL_H
 #define __HIGMAC_CTRL_H
 
-#define HIGMAC_SYSCTL_IOBASE		0xf8a220cc
-
-#define HIGMAC_FWD_IOBASE		(CONFIG_HIGMAC_IOBASE + 0x2000)
-#define FWD_IO_SIZE			0x2000/* FIXME: macif is mapped in this range */
-/* macif base on HIGMAC_FWD_IOBASE */
-#define MAC0_IF_CTRL			(0x100c)/* FIXME */
-#define MAC1_IF_CTRL			(0x1010)/* FIXME */
-
 #define STATION_ADDR_LOW		0x0000
 #define STATION_ADDR_HIGH		0x0004
 #define MAC_DUPLEX_HALF_CTRL		0x0008
-#ifndef CONFIG_S40_FPGA
-#define OFFSET_OF_FEPHY_CTRL		(0x0120-0x00CC) /* FEPHY CRG offset of SYSCTL */
-#endif
 
 #define MAX_FRM_SIZE			0x003c
 #define BITS_MAX_FRM_SIZE		MK_BITS(0, 14)
@@ -44,6 +33,8 @@
 
 #define MODE_CHANGE_EN			0x01b4
 #define BIT_MODE_CHANGE_EN		MK_BITS(0, 1)
+
+#define COL_SLOT_TIME			0x01c0
 
 #define RECV_CONTROL			0x01e0
 #define BIT_STRIP_PAD_EN		MK_BITS(3, 1)
@@ -237,23 +228,27 @@
 #define RX_FIFO_PKT_OUT_NUM				0x600
 #define BITS_RX_FIFO_PKT_OUT_NUM			MK_BITS(0, 32)
 
-
+/* board releated func */
+void __iomem *soc_fwdctl_iobase(void);
+void higmac_hw_mac_core_reset(struct higmac_netdev_local *ld);
 void higmac_set_macif(struct higmac_netdev_local *ld, int mode, int speed);
+void higmac_hw_internal_fephy_reset(struct higmac_adapter *adapter);
+void higmac_hw_external_phy_reset(void);
+void higmac_hw_all_clk_disable(void);
+
+/* board independent func */
 int higmac_hw_set_mac_addr(struct higmac_netdev_local *ld,
 		unsigned char *mac);
 void higmac_hw_get_mac_addr(struct higmac_netdev_local *ld,
 		unsigned char *mac);
-#ifndef CONFIG_S40_FPGA
-void higmac_hw_internal_fephy_reset(struct higmac_adapter *adapter);
-#endif
-void higmac_hw_mac_core_reset(struct higmac_netdev_local *ld);
 void higmac_hw_mac_core_init(struct higmac_netdev_local *ld);
 void higmac_hw_set_desc_queue_addr(struct higmac_netdev_local *ld);
+void higmac_hw_phy_gpio_reset(void);
 
 int higmac_clear_irqstatus(struct higmac_netdev_local *ld, int irqs);
 int higmac_read_irqstatus(struct higmac_netdev_local *ld);
-int higmac_irq_enable(struct higmac_netdev_local *ld, int irqs);
-int higmac_irq_disable(struct higmac_netdev_local *ld, int irqs);
+void higmac_irq_enable(struct higmac_netdev_local *ld);
+void higmac_irq_disable(struct higmac_netdev_local *ld);
 void higmac_hw_desc_enable(struct higmac_netdev_local *ld);
 void higmac_hw_desc_disable(struct higmac_netdev_local *ld);
 void higmac_port_enable(struct higmac_netdev_local *ld);
@@ -264,5 +259,4 @@ void higmac_rx_port_enable(struct higmac_netdev_local *ld);
 int higmac_xmit_release_skb(struct higmac_netdev_local *ld);
 int higmac_xmit_real_send(struct higmac_netdev_local *ld, struct sk_buff *skb);
 int higmac_feed_hw(struct higmac_netdev_local *ld);
-
 #endif

@@ -61,6 +61,10 @@
 	while(1); \
 } while (0)
 
+#define PR_ERR(fmt, args...) do{\
+	printk(KERN_ERR "%s(%d): " fmt, __FILE__, __LINE__, ##args); \
+} while (0)
+
 #define PR_MSG(_fmt, arg...) \
 	printk(_fmt, ##arg)
 

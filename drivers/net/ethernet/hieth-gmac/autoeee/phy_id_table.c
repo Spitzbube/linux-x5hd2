@@ -48,7 +48,7 @@ static int smsc_lan8740_init(struct phy_device *phy_dev)
 		eee_lan |= 0x4;
 		phy_write(phy_dev, 0x10, eee_lan);
 		eee_lan = phy_read(phy_dev, 0x10);
-		if (DEBUG)
+		if (debug(AUTOEEE))
 			pr_info("eee enable bit[45?] :%x\n", eee_lan);
 		/* auto negotiate after enable eee*/
 		eee_lan = phy_read(phy_dev, 0x0);
@@ -58,7 +58,7 @@ static int smsc_lan8740_init(struct phy_device *phy_dev)
 	}
 
 	v = phy_mmd_read(phy_dev, EEELPAR_DEV, EEELPAR);
-	if (DEBUG)
+	if (debug(AUTOEEE))
 		pr_info("EEELPAR = 0x%x\n", v);
 
 	if (v & LP_1000BASE_EEE)
@@ -95,7 +95,7 @@ static int rtl8211EG_mac_init(struct phy_device *phy_dev)
 	}
 
 	v = phy_mmd_read(phy_dev, EEELPAR_DEV, EEELPAR);
-	if (DEBUG)
+	if (debug(AUTOEEE))
 		pr_info("EEELPAR = 0x%x\n", v);
 
 	if (v & LP_1000BASE_EEE)
@@ -111,7 +111,7 @@ static int rtl8211EG_init(struct phy_device *phy_dev)
 	int eee_type = 0, v;
 
 	v = phy_mmd_read(phy_dev, EEELPAR_DEV, EEELPAR);
-	if (DEBUG)
+	if (debug(AUTOEEE))
 		pr_info("EEELPAR = 0x%x\n", v);
 
 	if (v & LP_1000BASE_EEE)
@@ -145,7 +145,7 @@ static int festa_v200_init(struct phy_device *phy_dev)
 	}
 
 	v = phy_mmd_read(phy_dev, EEELPAR_DEV, EEELPAR);
-	if (DEBUG)
+	if (debug(AUTOEEE))
 		pr_info("EEELPAR = 0x%x\n", v);
 
 	if (v & LP_1000BASE_EEE)
@@ -166,7 +166,7 @@ struct phy_info phy_info_table[] = {
 #else
 	{"Realtek 8211EG",	0x001cc915, PHY_EEE, &rtl8211EG_init},
 #endif
-	{"Festa V200",		HIGMAC_INTERNAL_FEPHY_ID, MAC_EEE, &festa_v200_init},
+	{"Festa V200",		HISILICON_PHY_ID_FESTAV200, MAC_EEE, &festa_v200_init},
 /*	{"Realtek 8201",	0x1cc816,  MAC_EEE, &SMSC_a_init},
 
 	{"IC+ IP101G_DS_R01",	0x2430c54,  MAC_EEE, &SMSC_a_init},

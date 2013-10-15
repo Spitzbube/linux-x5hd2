@@ -1,4 +1,3 @@
-
 #define SDIO_REG_BASE_CRG               IO_ADDRESS(0xF8A22000)
 
 /* SDIO0 REG */
@@ -67,8 +66,8 @@
 #define SDIO1_CKEN			(0x1 << 1)
 #define SDIO1_BUS_CKEN			(0x1 << 0)
 
-
-static void hi_mci_sys_ctrl_init(struct himci_host *host, resource_size_t host_crg_addr)
+static void hi_mci_sys_ctrl_init(struct himci_host *host,
+				 resource_size_t host_crg_addr)
 {
 	unsigned int tmp_reg;
 
@@ -77,7 +76,10 @@ static void hi_mci_sys_ctrl_init(struct himci_host *host, resource_size_t host_c
 		tmp_reg = himci_readl(host_crg_addr);
 
 		tmp_reg &= ~SDIO0_CLK_SEL_MASK;
-		tmp_reg |= SDIO0_CLK_SEL_24M | SDIO0_DRV_PS_SEL_45;
+		tmp_reg &= ~SDIO0_DRV_PS_SEL_MASK;
+		tmp_reg &= ~SDIO0_SAP_PS_SEL_MASK;
+		tmp_reg |= SDIO0_CLK_SEL_50M | SDIO0_DRV_PS_SEL_135
+			| SDIO0_SAP_PS_SEL_90;
 		himci_writel(tmp_reg, host_crg_addr);
 
 		/* SDIO soft reset */
@@ -94,19 +96,26 @@ static void hi_mci_sys_ctrl_init(struct himci_host *host, resource_size_t host_c
 
 	if ((SDIO_REG_BASE_CRG + PERI_CRG40) == (unsigned int)host_crg_addr) {
 
-		/* enable SDIO clock */
-		tmp_reg = himci_readl(host_crg_addr);
-
-		tmp_reg &= ~SDIO1_CLK_SEL_MASK;
-		tmp_reg |= SDIO1_CLK_SEL_24M | SDIO0_DRV_PS_SEL_45;
-		himci_writel(tmp_reg, host_crg_addr);
+		/* SDIO clock phase */
+		if (_HI3716CV200ES == get_chipid()) {
+			tmp_reg = himci_readl(host_crg_addr);
+			tmp_reg &= ~(SDIO1_CLK_SEL_MASK | SDIO1_DRV_PS_SEL_MASK
+					   | SDIO1_SAP_PS_SEL_MASK);
+			tmp_reg |= SDIO1_CLK_SEL_50M | SDIO1_DRV_PS_SEL_45;
+			himci_writel(tmp_reg, host_crg_addr);
+		} else {
+			tmp_reg = himci_readl(host_crg_addr);
+			tmp_reg &= ~SDIO1_CLK_SEL_MASK;
+			tmp_reg |= SDIO1_CLK_SEL_50M;
+			himci_writel(tmp_reg, host_crg_addr);
+		}
 
 		/* SDIO soft reset */
 		tmp_reg |= SDIO1_SRST_REQ;
 		himci_writel(tmp_reg, host_crg_addr);
 		udelay(1000);
 		tmp_reg &= ~SDIO1_SRST_REQ;
-		tmp_reg |= SDIO0_CKEN | SDIO0_BUS_CKEN;
+		tmp_reg |= SDIO1_CKEN | SDIO1_BUS_CKEN;
 		himci_writel(tmp_reg, host_crg_addr);
 		return;
 	}
@@ -114,7 +123,8 @@ static void hi_mci_sys_ctrl_init(struct himci_host *host, resource_size_t host_c
 	return;
 }
 
-static void hi_mci_sys_ctrl_suspend(struct himci_host *host, resource_size_t host_crg_addr)
+static void hi_mci_sys_ctrl_suspend(struct himci_host *host,
+				    resource_size_t host_crg_addr)
 {
 	unsigned int tmp_reg;
 
@@ -144,4 +154,3 @@ static void hi_mci_sys_ctrl_suspend(struct himci_host *host, resource_size_t hos
 		return;
 	}
 }
-

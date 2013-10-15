@@ -133,7 +133,7 @@ int find_cpu_resource(const char *name, struct resource **resource,
 	struct cpu_info *info = godbox_cpu_info;
 	struct device_resource **res = info->resource;
 
-	for (; res; res++) {
+	for (; *res; res++) {
 		if (!strcmp((*res)->name, name)) {
 			if (resource)
 				(*resource) = (*res)->resource;

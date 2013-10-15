@@ -38,9 +38,9 @@
 #endif
 
 struct cma {
-	unsigned long	base_pfn;
-	unsigned long	count;
-	unsigned long	*bitmap;
+	unsigned long base_pfn;
+	unsigned long count;
+	unsigned long *bitmap;
 };
 
 struct cma *dma_contiguous_default_area;
@@ -63,6 +63,7 @@ struct cma *dma_contiguous_default_area;
  */
 static const unsigned long size_bytes = CMA_SIZE_MBYTES * SZ_1M;
 static long size_cmdline = -1;
+static char bitmap_buf[16384];
 
 static int __init early_cma(char *p)
 {
@@ -328,7 +329,7 @@ again:
 	index = __ALIGN_MASK(index, align_mask);
 	end = index + nr;
 	if (end > size)
-		return end;
+		goto out;
 	i = find_next_bit(map, size, index);
 	if (i < end) {
 		start = i + 1;
@@ -346,7 +347,7 @@ again:
 		start = i + 1;
 		goto again;
 	}
-
+out:
 	return best;
 }
 
@@ -367,12 +368,17 @@ struct page *dma_alloc_from_contiguous(struct device *dev, int count,
 	unsigned long mask, pfn, pageno, start = 0;
 	struct cma *cma = dev_get_cma_area(dev);
 	int ret;
+	int len;
 
 	if (!cma || !cma->count)
 		return NULL;
 
 	if (align > CONFIG_CMA_ALIGNMENT)
 		align = CONFIG_CMA_ALIGNMENT;
+	/** force align to 4KBtytes start ,
+	 *  to minimize cma fragmentation, but needs to fix later
+	 */
+	align = 0;
 
 	pr_debug("%s(cma %p, count %d, align %d)\n", __func__, (void *)cma,
 		 count, align);
@@ -385,8 +391,9 @@ struct page *dma_alloc_from_contiguous(struct device *dev, int count,
 	mutex_lock(&cma_mutex);
 
 	for (;;) {
-		pageno = bitmap_find_next_zero_area(cma->bitmap,
-				cma->count, start, count, mask);
+		pageno = bitmap_find_next_zero_area_best(cma->bitmap,
+							 cma->count, start,
+							 count, mask);
 		if (pageno >= cma->count) {
 			ret = -ENOMEM;
 			goto error;
@@ -411,6 +418,19 @@ struct page *dma_alloc_from_contiguous(struct device *dev, int count,
 	pr_debug("%s(): returned %p\n", __func__, pfn_to_page(pfn));
 	return pfn_to_page(pfn);
 error:
+	if (ret != -EINTR) {
+		memset(bitmap_buf, 0, sizeof(bitmap_buf));
+		len = bitmap_scnlistprintf(bitmap_buf, 16384 - 2, cma->bitmap,
+					   cma->count);
+		bitmap_buf[len++] = '\n';
+		bitmap_buf[len] = '\0';
+		printk(KERN_WARNING "cma area total:%lu pages\n", cma->count);
+		printk(KERN_WARNING "alloc %d failed: %d\n", count, ret);
+		printk(KERN_WARNING "bitmap\n");
+		printk(KERN_WARNING "%s\n", bitmap_buf);
+		printk(KERN_WARNING "\n*************************\n");
+	}
+
 	mutex_unlock(&cma_mutex);
 	return NULL;
 }

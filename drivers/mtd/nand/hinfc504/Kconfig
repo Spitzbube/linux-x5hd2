@@ -44,20 +44,39 @@ config HINFC504_MAX_CHIP
 	  nand controller v504 device only support 1 or 2 nand flash chip,
 	  your should not config other value.
 
-config HINFC504_DBG_NAND_PROC_FILE
-	bool "Debug: create /proc/nand_logs file"
+config HINFC504_DBG_NAND_DEBUG
+	bool "Debug: create debug file to control debug type"
+	default y
 	help
-	  Create /proc/nand_logs file for debug.
+	  Create "debug" file to control debug type.
 
-config HINFC504_DBG_NAND_PE_PROC_FILE
-	bool "Debug: create /proc/nand_erase file"
+config HINFC504_DBG_NAND_DUMP
+	bool "Debug: display read/write/erase process nand data"
+	depends on HINFC504_DBG_NAND_DEBUG
+	default y
 	help
-	  Create /proc/nand_erase file record nand erase times for every block.
+	  Create "dump" file dump to display all nand operation and data.
 
-config HINFC504_DBG_NAND_EC_NOTICE
-	bool "Debug: notice uncorrectable error"
+config HINFC504_DBG_NAND_ERASE_COUNT
+	bool "Debug: display last erase count"
+	depends on HINFC504_DBG_NAND_DEBUG
+	default y
 	help
-	  Notice nand uncorrectable error
+	  Create "erase_count" file to display last erase count.
+
+config HINFC504_DBG_NAND_ECC_COUNT
+	bool "Debug: display last ecc count."
+	depends on HINFC504_DBG_NAND_DEBUG
+	default y
+	help
+	  Create "ecc_count" to display last ecc count.
+
+config HINFC504_DBG_NAND_READ_RETRY
+	bool "Debug: display read_retry process"
+	depends on HINFC504_DBG_NAND_DEBUG
+	default y
+	help
+	  Create read_retry file to display read_retry process.
 
 choice
 	prompt "Pagesize and Ecc Type Select"

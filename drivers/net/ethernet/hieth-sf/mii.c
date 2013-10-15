@@ -37,7 +37,8 @@ static int hieth_mdiobus_read(struct mii_bus *bus, int phy_addr, int regnum)
 	return hieth_mdio_read(bus->priv, phy_addr, regnum);
 }
 
-static int hieth_mdiobus_write(struct mii_bus *bus, int phy_addr, int regnum, u16 val)
+static int hieth_mdiobus_write(struct mii_bus *bus, int phy_addr, int regnum,
+			       u16 val)
 {
 	return hieth_mdio_write(bus->priv, phy_addr, regnum, val);
 }
@@ -52,11 +53,12 @@ int hieth_mdiobus_driver_init(struct platform_device *pdev)
 	int phy, ret = 0;
 	struct hieth_mdio_local *ld = &hieth_mdio_local_device;
 
-	ld->iobase = (unsigned long)ioremap_nocache(
-			CONFIG_HIETH_IOBASE, CONFIG_HIETH_IOSIZE);
-	if (!ld->iobase){
+	ld->iobase =
+	    (unsigned long)ioremap_nocache(CONFIG_HIETH_IOBASE,
+					   CONFIG_HIETH_IOSIZE);
+	if (!ld->iobase) {
 		hieth_error("ioremap_nocache err, base=0x%.8x, size=0x%.8x\n",
-				CONFIG_HIETH_IOBASE, CONFIG_HIETH_IOSIZE);
+			    CONFIG_HIETH_IOBASE, CONFIG_HIETH_IOSIZE);
 		ret = -EFAULT;
 		goto _error_exit;
 	}
@@ -75,11 +77,11 @@ int hieth_mdiobus_driver_init(struct platform_device *pdev)
 
 	hieth_mdiobus->name = HIETH_MIIBUS_NAME;
 	snprintf(hieth_mdiobus->id, MII_BUS_ID_SIZE, "%s", hieth_mdiobus->name);
-	hieth_mdiobus->read =  hieth_mdiobus_read;
+	hieth_mdiobus->read = hieth_mdiobus_read;
 	hieth_mdiobus->write = hieth_mdiobus_write;
 	hieth_mdiobus->reset = hieth_mdiobus_reset;
 	hieth_mdiobus->priv = ld;
-	hieth_mdiobus->parent = &pdev->dev;/*for Power Management*/
+	hieth_mdiobus->parent = &pdev->dev;	/*for Power Management */
 
 	hieth_mdiobus->irq = kmalloc(sizeof(int) * PHY_MAX_ADDR, GFP_KERNEL);
 	if (!hieth_mdiobus->irq) {
@@ -104,7 +106,7 @@ _error_free_mdiobus:
 	mdiobus_free(hieth_mdiobus);
 
 _error_iounmap:
-	iounmap((void*)ld->iobase);
+	iounmap((void *)ld->iobase);
 
 _error_exit:
 	return ret;
@@ -120,7 +122,7 @@ void hieth_mdiobus_driver_exit(void)
 
 	mdiobus_free(hieth_mdiobus);
 
-	iounmap((void*)ld->iobase);
+	iounmap((void *)ld->iobase);
 
 	hieth_mdio_exit(ld);
 

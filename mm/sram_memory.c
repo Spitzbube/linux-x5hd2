@@ -29,13 +29,13 @@
 
 #define SRAM_VIRT_TO_PHYS(VADDR) (VADDR - sram_manager_info.sram_virt_start + CONFIG_SRAM_PHYS_START)
 
-typedef struct{
+typedef struct {
 	unsigned long addr;
 	unsigned long size;
 	struct list_head list;
-}sram_mem_head;
+} sram_mem_head;
 
-typedef struct{
+typedef struct {
 	unsigned long sram_virt_start;
 	unsigned long sram_virt_end;
 	unsigned long total_free_bytes;
@@ -45,25 +45,28 @@ typedef struct{
 	struct list_head sram_alloc_list;
 	struct list_head sram_blocks_list;
 	unsigned char *backup;
-}sram_manager;
+} sram_manager;
 
-sram_manager sram_manager_info = {0, 0};
+sram_manager sram_manager_info = { 0, 0 };
 
 int init_sram_manager(void)
 {
 	sram_mem_head *p = NULL;
 	unsigned long lock_flags = 0;
-	
+
 	SRAM_DEBUG("SRAM Manager initializing ...");
-	sram_manager_info.sram_virt_start = (unsigned long)ioremap_nocache(CONFIG_SRAM_PHYS_START, CONFIG_SRAM_SIZE);
+	sram_manager_info.sram_virt_start =
+	    (unsigned long)ioremap_nocache(CONFIG_SRAM_PHYS_START,
+					   CONFIG_SRAM_SIZE);
 	if (!sram_manager_info.sram_virt_start) {
 		printk(KERN_ERR "Failed to remap SRAM!\n");
 		goto error;
 	}
 
-	sram_manager_info.sram_virt_end = sram_manager_info.sram_virt_start + CONFIG_SRAM_SIZE;
-	
-	p = (sram_mem_head *)vmalloc(sizeof(sram_mem_head));
+	sram_manager_info.sram_virt_end =
+	    sram_manager_info.sram_virt_start + CONFIG_SRAM_SIZE;
+
+	p = (sram_mem_head *) vmalloc(sizeof(sram_mem_head));
 	if (!p) {
 		printk(KERN_ERR "Failed to allocate the first head of SRAM!\n");
 		goto error;
@@ -71,7 +74,7 @@ int init_sram_manager(void)
 
 	p->addr = sram_manager_info.sram_virt_start;
 	p->size = CONFIG_SRAM_SIZE;
-	
+
 	spin_lock_init(&sram_manager_info.lock);
 	spin_lock_irqsave(&sram_manager_info.lock, lock_flags);
 	INIT_LIST_HEAD(&sram_manager_info.sram_free_list);
@@ -83,7 +86,8 @@ int init_sram_manager(void)
 
 	sram_manager_info.backup = (unsigned char *)vmalloc(CONFIG_SRAM_SIZE);
 	if (!sram_manager_info.backup) {
-		printk(KERN_ERR "Failed to allocate SRAM backup region for power manager!\n");
+		printk(KERN_ERR
+		       "Failed to allocate SRAM backup region for power manager!\n");
 		goto error;
 	}
 	SRAM_DEBUG("SRAM Manager initialized");
@@ -105,7 +109,8 @@ error:
 	return -1;
 }
 
-void *sram_alloc(unsigned long size,  unsigned int *phys_addr, unsigned long flags)
+void *sram_alloc(unsigned long size, unsigned int *phys_addr,
+		 unsigned long flags)
 {
 	struct list_head *loop = NULL;
 	sram_mem_head *tmp = NULL;
@@ -123,11 +128,10 @@ void *sram_alloc(unsigned long size,  unsigned int *phys_addr, unsigned long fla
 		if (tmp->size > size)
 			break;
 
-
 		if (++i >= sram_manager_info.total_free_blocks)
 			break;
 	}
-	
+
 	if (i >= sram_manager_info.total_free_blocks) {
 		SRAM_DEBUG("No mem blocks fit!");
 		goto error;
@@ -145,7 +149,7 @@ void *sram_alloc(unsigned long size,  unsigned int *phys_addr, unsigned long fla
 
 	sram_manager_info.total_free_bytes -= size;
 	spin_unlock_irqrestore(&sram_manager_info.lock, lock_flags);
-	
+
 	if (phys_addr)
 		*phys_addr = SRAM_VIRT_TO_PHYS(alloc_addr);
 
@@ -167,7 +171,9 @@ int sram_pm_save(void)
 		return -1;
 	}
 
-	memcpy(sram_manager_info.backup, (unsigned char *)sram_manager_info.sram_virt_start, CONFIG_SRAM_SIZE);
+	memcpy(sram_manager_info.backup,
+	       (unsigned char *)sram_manager_info.sram_virt_start,
+	       CONFIG_SRAM_SIZE);
 	return 0;
 }
 
@@ -176,7 +182,8 @@ int sram_pm_resume(void)
 	if (!sram_manager_info.backup || !sram_manager_info.sram_virt_start) {
 		return -1;
 	}
-	
-	memcpy((unsigned char *)sram_manager_info.sram_virt_start, sram_manager_info.backup,  CONFIG_SRAM_SIZE);
+
+	memcpy((unsigned char *)sram_manager_info.sram_virt_start,
+	       sram_manager_info.backup, CONFIG_SRAM_SIZE);
 	return 0;
 }

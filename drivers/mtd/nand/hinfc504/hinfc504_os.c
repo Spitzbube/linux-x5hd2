@@ -26,8 +26,18 @@ struct partition_info
 	struct partition_entry entry[MAX_MTD_PARTITIONS];
 	struct mtd_partition parts[MAX_MTD_PARTITIONS];
 };
-/*****************************************************************************/
-static struct partition_info ptn_info;
+
+#ifdef CONFIG_MTD_PART_CHANGE
+extern int register_mtd_partdev(struct mtd_info *mtd);
+extern int unregister_mtd_partdev(struct mtd_info *mtd);
+#else
+int register_mtd_partdev(struct mtd_info *mtd){ return 0; };
+int unregister_mtd_partdev(struct mtd_info *mtd){return 0;};
+#endif
+
+static const char *part_probes_type[] = { "cmdlinepart", NULL, };
+
+static struct partition_info ptn_info = {0};
 
 static int __init parse_nand_partitions(const struct tag *tag)
 {
@@ -77,39 +87,6 @@ static int __init parse_nand_param(const struct tag *tag)
 }
 /* 0x48694E77 equal to fastoot ATAG_NAND_PARAM */
 __tagtable(0x48694E77, parse_nand_param);
-/*****************************************************************************/
-
-static int hinfc_os_add_paratitions(struct hinfc_host *host)
-{
-	int ix;
-	int nr_parts = 0;
-	struct mtd_partition *parts = NULL;
-
-#ifdef CONFIG_MTD_CMDLINE_PARTS
-	static const char *part_probes[] = { "cmdlinepart", NULL, };
-	nr_parts = parse_mtd_partitions(host->mtd, part_probes, &parts, 0);
-#endif
-
-	if (!nr_parts) {
-		nr_parts = ptn_info.parts_num;
-		parts    = ptn_info.parts;
-	}
-
-	if (nr_parts <= 0)
-		return 0;
-
-	for (ix = 0; ix < nr_parts; ix++) {
-		DBG_MSG("partitions[%d] = {.name = %s, .offset = 0x%.8x, "
-		        ".size = 0x%08x (%uKiB) }\n",
-		        ix, parts[ix].name,
-		        (unsigned int)parts[ix].offset,
-		        (unsigned int)parts[ix].size,
-		        (unsigned int)parts[ix].size/1024);
-	}
-
-	host->add_partition = 1;
-	return add_mtd_partitions(host->mtd, parts, nr_parts);
-}
 /*****************************************************************************/
 
 static int hinfc504_os_enable(struct hinfc_host *host, int enable)
@@ -221,12 +198,13 @@ static int hinfc504_os_probe(struct platform_device * pltdev)
 		goto fail;
 	}
 
-	result = hinfc_os_add_paratitions(host);
-	if (host->add_partition)
-		return result;
+	register_mtd_partdev(host->mtd);
 
-	if (!add_mtd_device(host->mtd))
+	if (!mtd_device_parse_register(mtd, part_probes_type,
+		NULL, ptn_info.parts, ptn_info.parts_num))
 		return 0;
+
+	unregister_mtd_partdev(host->mtd);
 
 	result = -ENODEV;
 	nand_release(mtd);
@@ -254,7 +232,10 @@ static int hinfc504_os_remove(struct platform_device *pltdev)
 
 	host->enable(host, DISABLE);
 
+	unregister_mtd_partdev(host->mtd);
+
 	nand_release(host->mtd);
+
 	dma_free_coherent(host->dev,
 		(NAND_MAX_PAGESIZE + NAND_MAX_OOBSIZE),
 		host->buffer,

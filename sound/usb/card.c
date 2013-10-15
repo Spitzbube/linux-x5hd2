@@ -48,7 +48,9 @@
 #include <linux/usb/audio.h>
 #include <linux/usb/audio-v2.h>
 #include <linux/module.h>
-
+#ifdef CONFIG_ANDROID_SWITCH
+#include <linux/switch.h>
+#endif
 #include <sound/control.h>
 #include <sound/core.h>
 #include <sound/info.h>
@@ -115,6 +117,20 @@ MODULE_PARM_DESC(ignore_ctl_error,
 static DEFINE_MUTEX(register_mutex);
 static struct snd_usb_audio *usb_chip[SNDRV_CARDS];
 static struct usb_driver usb_audio_driver;
+
+#ifdef CONFIG_ANDROID_SWITCH
+/*
+ *	use a switch to report to userspace what type of device
+ *	is most recently connected.
+ */
+enum switch_state {
+	STATE_CONNECTED_UNKNOWN = -1,
+	STATE_DISCONNECTED = 0,
+	STATE_CONNECTED = 1
+};
+
+static struct switch_dev sdev;
+#endif
 
 /*
  * disconnect streams
@@ -323,8 +339,11 @@ static int snd_usb_audio_create(struct usb_device *dev, int idx,
 		snd_printk(KERN_ERR "unknown device speed %d\n", snd_usb_get_speed(dev));
 		return -ENXIO;
 	}
-
-	err = snd_card_create(index[idx], id[idx], THIS_MODULE, 0, &card);
+#ifdef CONFIG_ANDROID
+		err = snd_card_create(2, id[2], THIS_MODULE, 0, &card);
+#else
+		err = snd_card_create(index[idx], id[idx], THIS_MODULE, 0, &card);
+#endif
 	if (err < 0) {
 		snd_printk(KERN_ERR "cannot create card instance %d\n", idx);
 		return err;
@@ -524,6 +543,14 @@ snd_usb_audio_probe(struct usb_device *dev,
 		goto __error;
 	}
 
+#ifdef CONFIG_ANDROID_SWITCH
+	/*
+	 * not sure how to distinguish analog/digital/unknown,
+	 * assume digital for now
+	 */
+	switch_set_state(&sdev, STATE_CONNECTED);
+#endif
+
 	usb_chip[chip->index] = chip;
 	chip->num_interfaces++;
 	chip->probing = 0;
@@ -561,6 +588,9 @@ static void snd_usb_audio_disconnect(struct usb_device *dev,
 
 	mutex_lock(&register_mutex);
 	chip->num_interfaces--;
+#ifdef CONFIG_ANDROID_SWITCH
+	switch_set_state(&sdev, STATE_DISCONNECTED);
+#endif
 	if (chip->num_interfaces <= 0) {
 		snd_card_disconnect(card);
 		/* release the pcm resources */
@@ -717,15 +747,30 @@ static struct usb_driver usb_audio_driver = {
 
 static int __init snd_usb_audio_init(void)
 {
+	int err = 0;
+
 	if (nrpacks < 1 || nrpacks > MAX_PACKS) {
 		printk(KERN_WARNING "invalid nrpacks value.\n");
 		return -EINVAL;
 	}
-	return usb_register(&usb_audio_driver);
+
+#ifdef CONFIG_ANDROID_SWITCH
+	sdev.name = "usb_audio";
+	if (switch_dev_register(&sdev)){
+		printk(KERN_ERR "error registering switch device");
+		return -EINVAL;
+	}
+#endif
+
+	err = usb_register(&usb_audio_driver);
+	return err;
 }
 
 static void __exit snd_usb_audio_cleanup(void)
 {
+#ifdef CONFIG_ANDROID_SWITCH
+	switch_dev_unregister(&sdev);
+#endif
 	usb_deregister(&usb_audio_driver);
 }
 

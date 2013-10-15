@@ -85,7 +85,7 @@ static unsigned long isolate_freepages_block(unsigned long blockpfn,
 		}
 
 		/* Found a free page, break it into order-0 pages */
-		isolated = split_free_page(page);
+		isolated = split_free_page(page, !strict);
 		if (!isolated && strict)
 			return 0;
 		total_isolated += isolated;

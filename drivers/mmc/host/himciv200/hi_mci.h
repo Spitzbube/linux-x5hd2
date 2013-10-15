@@ -67,7 +67,6 @@ extern int trace_level;
 			(unsigned int)(v)); \
 } while (0)
 
-
 struct himci_des {
 	unsigned long idmac_des_ctrl;
 	unsigned long idmac_des_buf_size;
@@ -75,7 +74,7 @@ struct himci_des {
 	unsigned long idmac_des_next_addr;
 };
 
-struct himci_host{
+struct himci_host {
 	struct mmc_host		*mmc;
 	spinlock_t		lock;
 	struct mmc_request	*mrq;
@@ -83,12 +82,14 @@ struct himci_host{
 	struct mmc_data		*data;
 	void __iomem		*base;
 	unsigned int		card_status;
-	struct scatterlist	*dma_sg;
-	unsigned int		dma_sg_num;
-	unsigned int		dma_alloc_size;
-	unsigned int		dma_dir;
+	struct scatterlist 	*dma_sg;
+
+	unsigned int dma_sg_num;
+	unsigned int dma_alloc_size;
+	unsigned int dma_dir;
+
 	dma_addr_t		dma_paddr;
-	unsigned int		*dma_vaddr;
+	unsigned int 		*dma_vaddr;
 	struct timer_list	timer;
 	unsigned int		irq;
 	wait_queue_head_t	intr_wait;
@@ -98,9 +99,9 @@ struct himci_host{
 #define	HIMCI_PEND_DTO_m	(1 << HIMCI_PEND_DTO_b)
 };
 
-typedef union{
+typedef union {
 	unsigned int cmd_arg;
-	struct cmd_bits_arg{
+	struct cmd_bits_arg {
 		unsigned int cmd_index:6;
 		unsigned int response_expect:1;
 		unsigned int response_length:1;
@@ -120,5 +121,3 @@ typedef union{
 } cmd_arg_s;
 
 #endif
-
-

@@ -141,6 +141,7 @@ char elf_platform[ELF_PLATFORM_SIZE];
 EXPORT_SYMBOL(elf_platform);
 
 static char boot_sdkversion[64] = "0.0.0.0";
+static unsigned long board_dram_size = 0;
 
 static const char *cpu_name;
 static const char *machine_name;
@@ -669,10 +670,17 @@ __tagtable(ATAG_CORE, parse_tag_core);
 
 static int __init parse_tag_mem32(const struct tag *tag)
 {
+	board_dram_size += tag->u.mem.size;
 	return arm_add_memory(tag->u.mem.start, tag->u.mem.size);
 }
 
 __tagtable(ATAG_MEM, parse_tag_mem32);
+
+unsigned long get_dram_size(void)
+{
+	return board_dram_size;
+}
+EXPORT_SYMBOL(get_dram_size);
 
 #if defined(CONFIG_VGA_CONSOLE) || defined(CONFIG_DUMMY_CONSOLE)
 struct screen_info screen_info = {

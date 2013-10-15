@@ -19,8 +19,8 @@
 #define HISFC350_CFG23_CLK_SRC_OFFSET       8
 #define HISFC350_CFG23_CLK_SRC_MASK         0x7 << HISFC350_CFG23_CLK_SRC_OFFSET
 #define HISFC350_CRG23_CLK_24M              0x0 << HISFC350_CFG23_CLK_SRC_OFFSET
-#define HISFC350_CRG23_CLK_150M             0x4 << HISFC350_CFG23_CLK_SRC_OFFSET
 #define HISFC350_CRG23_CLK_200M             0x5 << HISFC350_CFG23_CLK_SRC_OFFSET
+#define HISFC350_CRG23_CLK_150M             0x4 << HISFC350_CFG23_CLK_SRC_OFFSET
 #define HISFC350_CRG23_CLK_100M             0x6 << HISFC350_CFG23_CLK_SRC_OFFSET
 #define HISFC350_CRG23_CLK_75M              0x7 << HISFC350_CFG23_CLK_SRC_OFFSET
 
@@ -28,20 +28,17 @@
 void hisfc350_set_system_clock(struct hisfc_host *host,
 	struct spi_operation *op, int clk_en)
 {
-	unsigned int regval = readl(host->sysreg + HISFC350_CRG23);
+	unsigned int regval = HISFC350_CRG23_CLK_24M;
 
-	regval &= ~HISFC350_CFG23_CLK_SRC_MASK;
-
-#ifdef CONFIG_S40_FPGA
-	regval |= HISFC350_CRG23_CLK_24M; /* for s40 fpga */
-#else
-	regval |= HISFC350_CRG23_CLK_200M;
-#endif
+	if (op && op->clock) {
+		regval = (op->clock & HISFC350_CFG23_CLK_SRC_MASK);
+		if (regval == HISFC350_CRG23_CLK_200M)
+			regval = HISFC350_CRG23_CLK_150M;
+	}
 
 	if (clk_en)
 		regval |= HISFC350_CRG23_CLKEN;
-	
-	regval &= ~HISFC350_CRG23_RST;
+
 	if (readl(host->sysreg + HISFC350_CRG23) != regval)
 		writel(regval, (host->sysreg + HISFC350_CRG23));
 }
@@ -51,11 +48,10 @@ void hisfc350_get_best_clock(unsigned int * clock)
 {
 	int ix,clk;
 	unsigned int sysclk[] = {
-		24,  HISFC350_CRG23_CLK_24M,
-		75,  HISFC350_CRG23_CLK_75M,
-		100, HISFC350_CRG23_CLK_100M,
-		150, HISFC350_CRG23_CLK_150M,
-		200, HISFC350_CRG23_CLK_200M,
+		37,  HISFC350_CRG23_CLK_75M,
+		50, HISFC350_CRG23_CLK_100M,
+		75, HISFC350_CRG23_CLK_150M,
+		100, HISFC350_CRG23_CLK_200M,
 		0,0,
 	};
 
@@ -63,32 +59,33 @@ void hisfc350_get_best_clock(unsigned int * clock)
 	for (ix = 0; sysclk[ix]; ix += 2) {
 		if ((*clock) < sysclk[ix])
 			break;
-		clk = sysclk[ix+1]; 
+		clk = sysclk[ix+1];
 	}
 	(*clock) = clk;
 }
 /*****************************************************************************/
 #ifdef CONFIG_HISFC350_SHOW_CYCLE_TIMING
-char * hisfc350_get_clock_str(struct hisfc_host *host)
+char * hisfc350_get_clock_str(unsigned int clk_reg)
 {
 	static char buffer[40];
 	int ix;
-	unsigned int spi_clk_src;
 
-	static unsigned int clk_str[] = {
-		0, 24,         /* 0x000 : 24M */
-		4, 150,        /* 0x100 : 150M */
-		5, 200,        /* 0x101 : 200M */
-		6, 100,        /* 0x110 : 100M */
-		7, 75,         /* 0x111 : 75M */
-		0, 0,
+	unsigned int clk_str[] = {
+		0, 12,         /* 0x000 : 24M/2 */
+		1, 12,         /* 0x000 : 24M/2 */
+		2, 12,         /* 0x000 : 24M/2 */
+		3, 12,         /* 0x000 : 24M/2 */
+		4, 100,        /* 0x100 : 150M/2 */
+		5, 75,         /* 0x101 : 200M/2 */
+		6, 50,         /* 0x110 : 100M/2 */
+		7, 37,         /* 0x111 : 75M/2 */
 	};
 
-	spi_clk_src = readl(host->sysreg + HISFC350_CRG23);
-	spi_clk_src = ((spi_clk_src >> HISFC350_CFG23_CLK_SRC_OFFSET)
-		 & HISFC350_CFG23_CLK_SRC_MASK);
-	for (ix = 0; clk_str[ix] != 0; ix += 2) {
-		if (spi_clk_src == clk_str[ix]) {
+	clk_reg = ((clk_reg & HISFC350_CFG23_CLK_SRC_MASK) >>
+		HISFC350_CFG23_CLK_SRC_OFFSET);
+
+	for (ix = 0; clk_str[ix] < 8; ix += 2) {
+		if (clk_reg == clk_str[ix]) {
 			sprintf(buffer, "%dM", clk_str[ix+1]);
 			break;
 		}

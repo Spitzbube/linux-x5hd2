@@ -1,6 +1,9 @@
 #include <asm/atomic.h>
 #include "forward.h"
 #include "util.h"
+#include "ctrl.h"
+
+#if (CONFIG_GMAC_NUMS == 2)/* forwarding is only meaningful when mac nums = 2 */
 
 #define ETH0		0
 #define ETH1		1
@@ -225,6 +228,7 @@ void fwd_setup(struct higmac_adapter *adapter)
 	if (!inited) {
 		inited = 1;
 		fwd_usr_config_init();
+		adapter->fwdctl_iobase = soc_fwdctl_iobase();
 	}
 
 	fwd_uc_mc_tbl_clear(adapter);
@@ -355,3 +359,11 @@ void fwd_exit_promisc_mode(struct higmac_netdev_local *ld)
 		}
 	}
 }
+#else
+void fwd_suspend(struct higmac_adapter *adapter, int mode) {};
+void fwd_resume(struct higmac_adapter *adapter) {};
+void fwd_setup(struct higmac_adapter *adapter) {};
+void fwd_uc_mc_tbl_add(struct higmac_netdev_local *ld,
+	const unsigned char *addr, int entry, int mc) {};
+void fwd_mc_tbl_del(struct higmac_netdev_local *ld, int entry) {};
+#endif

@@ -83,7 +83,7 @@ void hi_sata_init(void __iomem *mmio)
 	// TODO: XXXX
 	unsigned int tmp_val;
 
-	/* Powre on SATA disk */
+	/* Power on SATA disk */
 	tmp_val = readl(IO_ADDRESS(0xF8A20008));
 	tmp_val |= 1<<10;
 	writel(tmp_val, IO_ADDRESS(0xF8A20008));
@@ -121,12 +121,21 @@ void hi_sata_init(void __iomem *mmio)
 	writel(0x600002, IO_ADDRESS(0xF9900118));
 	msleep(10);
 
-	/* Config SATA Port phy controller */
+	/*
+	 * Config SATA Port phy controller.
+	 * To take effect for 0xF990014C, 
+	 * we should force controller to 1.5G mode first
+	 * and then force it to 6G mode.
+	 */
 	writel(0xE100000, IO_ADDRESS(0xF9900174));
 	msleep(10);
 	writel(0xE5A0000, IO_ADDRESS(0xF9900174));
 	msleep(10);
 	writel(0xE4A0000, IO_ADDRESS(0xF9900174));
+	msleep(10);
+
+	/* Force to 3G mode for HiS40, due to the bug of 6G mode  */
+	writel(0xE250000, IO_ADDRESS(0xF9900174));
 	msleep(10);
 
 #endif

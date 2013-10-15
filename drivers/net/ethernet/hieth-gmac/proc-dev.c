@@ -56,11 +56,10 @@ static int set_forcing_fwd(int val)
 /* debug code */
 static int set_suspend(int eth_n)
 {
-	pm_message_t state = { .event = PM_EVENT_SUSPEND,};
+	pm_message_t state = {.event = PM_EVENT_SUSPEND, };
 	higmac_dev_driver.suspend(&higmac_platform_device, state);
 	return 0;
 }
-
 /* debug code */
 static int set_resume(int eth_n)
 {
@@ -69,7 +68,7 @@ static int set_resume(int eth_n)
 }
 
 static int hw_states_read(char *page, char **start, off_t off,
-		int count, int *eof, void *data)
+			  int count, int *eof, void *data)
 {
 	struct higmac_netdev_local *ld;
 	int len = 0, i;
@@ -87,6 +86,11 @@ static int hw_states_read(char *page, char **start, off_t off,
 
 	for_each_gmac_netdev_local_priv(ld, i) {
 		void __iomem *io_base = ld->gmac_iobase;
+		if (!ld->phy)
+			continue;
+		if (!netif_running(ld->netdev))
+			continue;
+
 		len += sprintf(&page[len],
 			"-------------------gmac[%d]-------------------\n", i);
 		sprintf_pkts("ok_bytes:", 0x80, 0x100);
@@ -111,7 +115,7 @@ static int hw_states_read(char *page, char **start, off_t off,
 }
 
 static int hw_fwd_mac_tbl_read(char *page, char **start, off_t off,
-		int count, int *eof, void *data)
+			       int count, int *eof, void *data)
 {
 	void __iomem *io_base = get_adapter()->fwdctl_iobase;
 	struct fwd_mac_tbl tbl;
@@ -120,24 +124,27 @@ static int hw_fwd_mac_tbl_read(char *page, char **start, off_t off,
 	if (off)
 		return 0;
 
+	if (!io_base)
+		return 0;
+
 	len += sprintf(&page[len], "hw_index owner\tto-cpu "
-			"to-other\t\tmac-addr\n");
+		       "to-other\t\tmac-addr\n");
 	for (i = 0; i < FWD_TBL_ENTRY_NUMS; i++) {
 		tbl.mac_tbl_l.val = readl(io_base + FW_MAC_TBL_L + i * 8);
 		tbl.mac_tbl_h.val = readl(io_base + FW_MAC_TBL_H + i * 8);
-		if (tbl.mac_tbl_h.bits.valid) {/* tbl entry valid */
+		if (tbl.mac_tbl_h.bits.valid) {	/* tbl entry valid */
 			len += sprintf(&page[len], "%5d\t  %s\t%5d %5d\t\t"
-				"%02hhx-%02hhx-%02hhx-%02hhx-%02hhx-%02hhx\n",
-				i,
-				tbl.mac_tbl_h.bits.owner ? "eth1" : "eth0",
-				tbl.mac_tbl_h.bits.to_cpu,
-				tbl.mac_tbl_h.bits.to_other,
-				tbl.mac_tbl_h.bits.mac5,
-				tbl.mac_tbl_h.bits.mac4,
-				tbl.mac_tbl_l.mac[3],
-				tbl.mac_tbl_l.mac[2],
-				tbl.mac_tbl_l.mac[1],
-				tbl.mac_tbl_l.mac[0]);
+				       "%02hhx-%02hhx-%02hhx-%02hhx-%02hhx-%02hhx\n",
+				       i,
+				       tbl.mac_tbl_h.bits.owner ? "eth1" : "eth0",
+				       tbl.mac_tbl_h.bits.to_cpu,
+				       tbl.mac_tbl_h.bits.to_other,
+				       tbl.mac_tbl_h.bits.mac5,
+				       tbl.mac_tbl_h.bits.mac4,
+				       tbl.mac_tbl_l.mac[3],
+				       tbl.mac_tbl_l.mac[2],
+				       tbl.mac_tbl_l.mac[1],
+				       tbl.mac_tbl_l.mac[0]);
 		}
 	}
 
@@ -146,7 +153,7 @@ static int hw_fwd_mac_tbl_read(char *page, char **start, off_t off,
 	return len;
 }
 
-static const char *mode_text[] = {
+static const char * const mode_text[] = {
 	[STANDALONE] = "standalone mode",
 	[MODE1] = "mode1",
 	[MODE2] = "mode2",
@@ -154,7 +161,7 @@ static const char *mode_text[] = {
 };
 
 static int work_mode_proc_read(char *page, char **start, off_t off,
-		int count, int *eof, void *data)
+			       int count, int *eof, void *data)
 {
 	struct higmac_adapter *adapter = get_adapter();
 	int len = 0;
@@ -163,19 +170,19 @@ static int work_mode_proc_read(char *page, char **start, off_t off,
 		return 0;
 
 	len += sprintf(&page[len], "%s(%d)", mode_text[adapter->work_mode],
-			adapter->work_mode);
+		       adapter->work_mode);
 
 	if (adapter->work_mode == MODE1 || adapter->work_mode == MODE2)
 		len += sprintf(&page[len], ", master(%s)",
-				adapter->master ? "eth1" : "eth0");
+			       adapter->master ? "eth1" : "eth0");
 
-	len +=  sprintf(&page[len], "\n");
+	len += sprintf(&page[len], "\n");
 
 	return len;
 }
 
 static int work_mode_proc_write(struct file *file, const char __user *buf,
-		unsigned long count, void *data)
+				unsigned long count, void *data)
 {
 	int mode, master, ret;
 	char line[8], *s;
@@ -187,7 +194,7 @@ static int work_mode_proc_write(struct file *file, const char __user *buf,
 		return -EFAULT;
 
 	mode = simple_strtoul(line, &s, 0);
-	s = strchr(s, ',');/* mode, master */
+	s = strchr(s, ',');	       /* mode, master */
 	if (s) {
 		while (*s == ' ' || *s == ',')
 			s++;
@@ -201,7 +208,7 @@ static int work_mode_proc_write(struct file *file, const char __user *buf,
 }
 
 static int fwd_proc_read(char *page, char **start, off_t off,
-		int count, int *eof, void *data)
+			 int count, int *eof, void *data)
 {
 	struct higmac_adapter *adapter = get_adapter();
 	int len = 0, fwd = adapter->forcing_fwd;
@@ -224,13 +231,13 @@ static int fwd_proc_read(char *page, char **start, off_t off,
 		break;
 	}
 
-	len +=  sprintf(&page[len], "\n");
+	len += sprintf(&page[len], "\n");
 
 	return len;
 }
 
 static int fwd_proc_write(struct file *file, const char __user *buf,
-		unsigned long count, void *data)
+			  unsigned long count, void *data)
 {
 	int val, ret;
 	char line[8];
@@ -248,7 +255,7 @@ static int fwd_proc_write(struct file *file, const char __user *buf,
 }
 
 static int debug_level_proc_read(char *page, char **start, off_t off,
-		int count, int *eof, void *data)
+				 int count, int *eof, void *data)
 {
 	struct higmac_adapter *adapter = get_adapter();
 	struct higmac_netdev_local *ld;
@@ -260,11 +267,15 @@ static int debug_level_proc_read(char *page, char **start, off_t off,
 	len += sprintf(&page[len], "debug_level:0x%x\n", adapter->debug_level);
 
 	for_each_gmac_netdev_local_priv(ld, i) {
-		len += sprintf(&page[len], "\neth%d skb-pool dry times:%ld\n",
-				ld->index, ld->rx_pool.rx_pool_dry_times);
+		if (!ld->phy)
+			continue;
+		if (!netif_running(ld->netdev))
+			continue;
+		len += sprintf(&page[len], "\neth%d: '0'=empty '1'=filled\n",
+				ld->index);
 		for (j = 0; j < ld->rx_fq.count; j++) {
 			len += sprintf(&page[len], "%s", ld->rx_fq.skb[j] ?
-					"@" : "_");
+					"1" : "0");
 			if ((j + 1) % 100 == 0)
 				len += sprintf(&page[len], "\n");
 		}
@@ -275,7 +286,7 @@ static int debug_level_proc_read(char *page, char **start, off_t off,
 }
 
 static int debug_level_proc_write(struct file *file, const char __user *buf,
-		unsigned long count, void *data)
+				  unsigned long count, void *data)
 {
 	struct higmac_adapter *adapter = get_adapter();
 	char line[8];
@@ -326,6 +337,7 @@ static struct proc_file {
  *	|---work_mode
  *	|---force_forwarding
  *	|---debug_level
+ *	|---skb_pools
  */
 void higmac_proc_create(void)
 {
@@ -338,14 +350,14 @@ void higmac_proc_create(void)
 
 	for (i = 0; i < ARRAY_SIZE(proc_file); i++) {
 		entry = create_proc_entry(proc_file[i].name, 0,
-				higmac_proc_root);
+					  higmac_proc_root);
 		if (entry) {
 			entry->read_proc = proc_file[i].read;
 			entry->write_proc = proc_file[i].write;
 			entry->data = NULL;
 		} else
 			pr_err("Cann't create proc file:%s!\n",
-					proc_file[i].name);
+			       proc_file[i].name);
 	}
 }
 
@@ -359,7 +371,8 @@ void higmac_proc_destroy(void)
 	remove_proc_entry("higmac", NULL);
 }
 
-static long gmacdev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+static long gmacdev_ioctl(struct file *file, unsigned int cmd,
+			  unsigned long arg)
 {
 	void __user *argp = (void __user *)arg;
 	struct pm_config pm_config;
@@ -405,11 +418,11 @@ static long gmacdev_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 
 int higmac_ioctl(struct net_device *net_dev, struct ifreq *rq, int cmd)
 {
-        struct higmac_netdev_local *ld = netdev_priv(net_dev);
+	struct higmac_netdev_local *ld = netdev_priv(net_dev);
 	struct pm_config pm_config;
-        int val = 0;
+	int val = 0;
 
-        switch (cmd) {
+	switch (cmd) {
 	case SIOCGETMODE:
 		val = get_adapter()->work_mode;
 		val <<= 16;
@@ -457,8 +470,8 @@ int higmac_ioctl(struct net_device *net_dev, struct ifreq *rq, int cmd)
 			return -EINVAL;
 
 		return phy_mii_ioctl(ld->phy, rq, cmd);
-        }
-        return 0;
+	}
+	return 0;
 }
 
 static int gmacdev_open(struct inode *inode, struct file *file)
@@ -472,10 +485,10 @@ static int gmacdev_release(struct inode *inode, struct file *file)
 }
 
 static const struct file_operations gmac_fops = {
-	.open		= gmacdev_open,
-	.release	= gmacdev_release,
-	.compat_ioctl	= gmacdev_ioctl,
-	.unlocked_ioctl	= gmacdev_ioctl,
+	.open = gmacdev_open,
+	.release = gmacdev_release,
+	.compat_ioctl = gmacdev_ioctl,
+	.unlocked_ioctl = gmacdev_ioctl,
 };
 
 static struct miscdevice gmac_dev = {

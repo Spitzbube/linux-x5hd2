@@ -14,10 +14,9 @@
 #include <linux/slab.h>
 #include <asm/hardware/gic.h>
 #include <asm/hardware/arm_timer.h>
-
+#include <linux/kmemleak.h>
 #include <linux/device.h>
 #include <linux/sram_memory.h>
-
 
 void __iomem *hi_sc_virtbase;
 void __iomem *hi_crg_virtbase;
@@ -48,7 +47,7 @@ static int hi_pm_save_gic(void)
 	gic_dist_base_addr = (void __iomem *)CFG_GIC_DIST_BASE;
 
 	/* disable gic dist */
-	writel(0 ,  gic_dist_base_addr + GIC_DIST_CTRL);
+	writel(0, gic_dist_base_addr + GIC_DIST_CTRL);
 
 	/*
 	 * Find out how many interrupts are supported.
@@ -61,34 +60,36 @@ static int hi_pm_save_gic(void)
 	 * Limit this to either the architected maximum, or the
 	 * platform maximum.
 	 */
-	if (max_irq > max(1020 , NR_IRQS)) {
-		max_irq = max(1020 , NR_IRQS);
+	if (max_irq > max(1020, NR_IRQS)) {
+		max_irq = max(1020, NR_IRQS);
 	}
 
 	/* save Dist target */
 	for (i = 32; i < max_irq; i += 4) {
-		saved_cpu_target_mask[i/4] =
-				readl(gic_dist_base_addr + GIC_DIST_TARGET + i * 4 / 4);
+		saved_cpu_target_mask[i / 4] =
+		    readl(gic_dist_base_addr + GIC_DIST_TARGET + i * 4 / 4);
 	}
 
 	/* save mask irq */
 	for (i = 0; i < max_irq; i += 32) {
-		saved_interrupt_mask[i/32] =
-				readl(gic_dist_base_addr + GIC_DIST_ENABLE_SET + i * 4 / 32);
+		saved_interrupt_mask[i / 32] =
+		    readl(gic_dist_base_addr + GIC_DIST_ENABLE_SET +
+			  i * 4 / 32);
 	}
 
 	/* clear all interrupt */
 	for (i = 0; i < max_irq; i += 32) {
-		writel(0xffffffff, gic_dist_base_addr + GIC_DIST_ENABLE_CLEAR + i * 4 / 32);
+		writel(0xffffffff,
+		       gic_dist_base_addr + GIC_DIST_ENABLE_CLEAR + i * 4 / 32);
 	}
 
 	/* read INT_ACK in CPU interface, until result is 1023 */
-	for(i = 0;i<max_irq;i++) {
+	for (i = 0; i < max_irq; i++) {
 		intack = readl(s40_gic_cpu_base_addr + 0x0c);
-		if(1023 == intack) {
+		if (1023 == intack) {
 			break;
 		}
-		writel(intack,s40_gic_cpu_base_addr + 0x10);
+		writel(intack, s40_gic_cpu_base_addr + 0x10);
 	}
 
 #if 0   /* comment off wakeup intr, cause we will go directly to deepsleep */
@@ -96,8 +97,9 @@ static int hi_pm_save_gic(void)
 	writel(0xffff, gic_dist_base_addr + GIC_DIST_ENABLE_SET);
 
 	/* enable KPC/TBC/RTC interrupt */
-	writel(GET_IRQ_BIT(IRQ_KPC)|GET_IRQ_BIT(IRQ_TBC)|GET_IRQ_BIT(IRQ_RTC),
-			gic_dist_base_addr + GIC_DIST_ENABLE_SET + 4);
+	writel(GET_IRQ_BIT(IRQ_KPC) | GET_IRQ_BIT(IRQ_TBC) |
+	       GET_IRQ_BIT(IRQ_RTC),
+	       gic_dist_base_addr + GIC_DIST_ENABLE_SET + 4);
 
 	writel(0, gic_dist_base_addr + GIC_DIST_ENABLE_SET + 8);
 
@@ -119,8 +121,7 @@ static int hi_pm_retore_gic(void)
 	unsigned int irq_status[5];
 
 	for (i = 0; i < 5; i++) {
-		irq_status[i] = readl(gic_dist_base_addr + 0xd00 + i*4);
-		//printk("irq[%02x]=%08x\n", i, irq_status[i]);
+		irq_status[i] = readl(gic_dist_base_addr + 0xd00 + i * 4);
 	}
 
 	writel(0, gic_dist_base_addr + GIC_DIST_CTRL);
@@ -152,28 +153,29 @@ static int hi_pm_retore_gic(void)
 	 * Set all global interrupts to this CPU only.
 	 */
 	for (i = 32; i < max_irq; i += 4) {
-		writel(saved_cpu_target_mask[i/4], gic_dist_base_addr + GIC_DIST_TARGET + i 
-* 4 / 4);
+		writel(saved_cpu_target_mask[i / 4],
+		       gic_dist_base_addr + GIC_DIST_TARGET + i * 4 / 4);
 	}
 
 	/*
 	 * Set priority on all interrupts.
 	 */
 	for (i = 0; i < max_irq; i += 4) {
-		writel(0xa0a0a0a0, gic_dist_base_addr + GIC_DIST_PRI + i * 4 / 4);
+		writel(0xa0a0a0a0,
+		       gic_dist_base_addr + GIC_DIST_PRI + i * 4 / 4);
 	}
 
 	/*
 	 * Disable all interrupts.
 	 */
 	for (i = 0; i < max_irq; i += 32) {
-		writel(0xffffffff, gic_dist_base_addr + GIC_DIST_ENABLE_CLEAR + i * 4 / 32);
+		writel(0xffffffff,
+		       gic_dist_base_addr + GIC_DIST_ENABLE_CLEAR + i * 4 / 32);
 	}
 
-
 	for (i = 0; i < max_irq; i += 32) {
-		writel(saved_interrupt_mask[i/32] , gic_dist_base_addr + 
-GIC_DIST_ENABLE_SET + i * 4 / 32);
+		writel(saved_interrupt_mask[i / 32], gic_dist_base_addr +
+		       GIC_DIST_ENABLE_SET + i * 4 / 32);
 	}
 
 	writel(1, gic_dist_base_addr + GIC_DIST_CTRL);
@@ -244,7 +246,7 @@ static int restore_timer0_register(void)
 	writel(timer0[1].timer_ctrl, timer0_base_addr + 0x20 + TIMER_CTRL);
 
 	/* restore timer0_0 timer0_1 bgload value. when reg value to zero then to 
-bgload */
+	   bgload */
 	writel(timer0[0].timer_bgload, timer0_base_addr + TIMER_BGLOAD);
 	writel(timer0[1].timer_bgload, timer0_base_addr + 0x20 + TIMER_BGLOAD);
 
@@ -262,7 +264,7 @@ static int hi_pm_suspend(void)
 	/* save gic */
 	hi_pm_save_gic();
 
-	/*save & disable l2 cache*/
+	/*save & disable l2 cache */
 #ifdef CONFIG_CACHE_L2X0
 	hi_pm_disable_l2cache();
 #endif
@@ -283,7 +285,7 @@ static int hi_pm_suspend(void)
 	sram_pm_resume();
 #endif
 
-	/*restore & enable l2 cache*/
+	/*restore & enable l2 cache */
 #ifdef CONFIG_CACHE_L2X0
 	hi_pm_enable_l2cache();
 #endif
@@ -291,29 +293,26 @@ static int hi_pm_suspend(void)
 	/* restore gic */
 	hi_pm_retore_gic();
 
-	/* enable irq*/
+	/* enable irq */
 	local_irq_restore(flage);
 
 	return 0;
 }
 
-
 static int hi_pm_enter(suspend_state_t state)
 {
-    int ret = 0;
-    //asm("b .");
-    switch (state) {
-    case PM_SUSPEND_STANDBY:
-    case PM_SUSPEND_MEM:
-        ret = hi_pm_suspend();
-        break;
-    default:
-        ret = -EINVAL;
-    }
+	int ret = 0;
+	switch (state) {
+	case PM_SUSPEND_STANDBY:
+	case PM_SUSPEND_MEM:
+		ret = hi_pm_suspend();
+		break;
+	default:
+		ret = -EINVAL;
+	}
 
-    return ret;
+	return ret;
 }
-
 
 int hipm_valid(suspend_state_t state)
 {
@@ -321,27 +320,32 @@ int hipm_valid(suspend_state_t state)
 }
 
 static const struct platform_suspend_ops hi_pm_ops = {
-	.enter		= hi_pm_enter,
-	.valid		= hipm_valid,
+	.enter = hi_pm_enter,
+	.valid = hipm_valid,
 };
 
 static int __init hi_pm_init(void)
 {
-    hi_sc_virtbase = (void __iomem *)IO_ADDRESS(REG_BASE_SCTL);
-    hi_crg_virtbase = (void __iomem *)IO_ADDRESS(REG_BASE_CRG);
+	hi_sc_virtbase = (void __iomem *)IO_ADDRESS(REG_BASE_SCTL);
+	hi_crg_virtbase = (void __iomem *)IO_ADDRESS(REG_BASE_CRG);
 
-    hi_pm_ddrbase = (unsigned int)kzalloc((PM_CTX_BUF_SIZE) , GFP_DMA|GFP_KERNEL);
-    hi_pm_phybase = __pa(hi_pm_ddrbase);
-
-    //printk("F:%s[%d]->ddrbase:0x%x, phy:0x%x.\n", __FUNCTION__,__LINE__,hi_pm_ddrbase, hi_pm_phybase);
-    //pr_debug("[PM]ddrbase:0x%x, phy:0x%x.\n", hi_pm_ddrbase, hi_pm_phybase);
+	hi_pm_ddrbase =
+	    (unsigned int)kzalloc((PM_CTX_BUF_SIZE), GFP_DMA | GFP_KERNEL);
+	hi_pm_phybase = __pa(hi_pm_ddrbase);
+	/*
+	 * Because hi_pm_ddrbase is saved in .text of hi_pm_sleep.S, the kmemleak,
+	 * which not check the .text, reports a mem leak here ,
+	 * so we suppress kmemleak messages.
+	 */
+	kmemleak_not_leak(hi_pm_ddrbase);
 
 	/* get the base address of timer0 */
-	timer0_base_addr = (unsigned long)IO_ADDRESS(REG_BASE_A9_PERI) + REG_A9_PERI_GLOBAL_TIMER;
+	timer0_base_addr =
+	    (unsigned long)IO_ADDRESS(REG_BASE_A9_PERI) +
+	    REG_A9_PERI_GLOBAL_TIMER;
 
 	suspend_set_ops(&hi_pm_ops);
 	return 0;
 }
 
 module_init(hi_pm_init);
-

@@ -205,37 +205,29 @@ static struct amba_device HIL_AMBADEV_NAME(name) =		\
 }
 
 HIL_AMBA_DEVICE(uart0, "uart:0",  UART0,    NULL);
+HIL_AMBA_DEVICE(uart1, "uart:1",  UART1,    NULL);
+HIL_AMBA_DEVICE(uart2, "uart:2",  UART2,    NULL);
 HIL_AMBA_DEVICE(uart3, "uart:3",  UART3,    NULL);
+HIL_AMBA_DEVICE(uart4, "uart:4",  UART4,    NULL);
 
 static struct amba_device *amba_devs[] __initdata = {
 	&HIL_AMBADEV_NAME(uart0),
+	&HIL_AMBADEV_NAME(uart1),
+	&HIL_AMBADEV_NAME(uart2),
 	&HIL_AMBADEV_NAME(uart3),
+	&HIL_AMBADEV_NAME(uart4),
 };
 
 /*
  * These are fixed clocks.
  */
-static struct clk uart_clk = {
-#ifdef CONFIG_S40_FPGA 
-	.rate = 54000000,
-#else
-	.rate = 85700000,
-#endif
-};
 
 static struct clk sp804_clk = {
 	.rate	= 24000000, /* TODO: XXX */
 };
 
 static struct clk_lookup lookups[] = {
-	{
-		/* UART0 */
-		.dev_id		= "uart:0",
-		.clk		= &uart_clk,
-	}, { /* UART3 */
-		.dev_id		= "uart:3",
-		.clk		= &uart_clk,
-	}, { /* SP804 timers */
+	{ /* SP804 timers */
 		.dev_id		= "sp804",
 		.clk		= &sp804_clk,
 	},
@@ -290,11 +282,63 @@ void __init s40_init(void)
 #ifdef CONFIG_CACHE_L2X0
 static int __init l2_cache_init(void)
 {
+	u32 val;
 	void __iomem *l2x0_base = (void __iomem *)IO_ADDRESS(REG_BASE_L2CACHE);
-	/* L2 icache pre-fetch is ON, dcache pre-fetch is OFF */
-	/* FIXME: 32way, 16 Associativity */
+
+	/*
+	 * Bits  Value Description
+	 * [31]    0 : SBZ
+	 * [30]    1 : Double linefill enable (L3)
+	 * [29]    1 : Instruction prefetching enable
+	 * [28]    1 : Data prefetching enabled
+	 * [27]    0 : Double linefill on WRAP read enabled (L3)
+	 * [26:25] 0 : SBZ
+	 * [24]    1 : Prefetch drop enable (L3)
+	 * [23]    0 : Incr double Linefill enable (L3)
+	 * [22]    0 : SBZ
+	 * [21]    0 : Not same ID on exclusive sequence enable (L3)
+	 * [20:5]  0 : SBZ
+	 * [4:0]   0 : use the Prefetch offset values 0.
+	 */
+	writel_relaxed(0x71000000, l2x0_base + L2X0_PREFETCH_CTRL);
+
+	val = __raw_readl(l2x0_base + L2X0_AUX_CTRL);
+	val |= (1 << 30); /* Early BRESP enabled */
+	val |= (1 << 0);  /* Full Line of Zero Enable */
+	writel_relaxed(val, l2x0_base + L2X0_AUX_CTRL);
+
+#if 0  // TODO: XXX
+	if (get_chipid() == _HI3719Mv100) {
+		unsigned int regval;
+
+		regval = readl_relaxed(l2x0_base + L2X0_TAG_LATENCY_CTRL);
+		regval &=0xfffff888;
+		writel_relaxed(regval, l2x0_base + L2X0_TAG_LATENCY_CTRL);
+
+		regval = readl_relaxed(l2x0_base + L2X0_DATA_LATENCY_CTRL);
+		regval &=0xfffff888;
+		writel_relaxed(regval, l2x0_base + L2X0_DATA_LATENCY_CTRL);
+
+		l2x0_init(l2x0_base, 0x00440000, 0xFFB0FFFF);
+
+	} if (get_chipid() == _HI3716CV200ES) 
+#endif
 
 	l2x0_init(l2x0_base, 0x00450000, 0xFFB0FFFF);
+
+	/*
+	 * 2. enable L2 prefetch hint                  [1]a
+	 * 3. enable write full line of zeros mode.    [3]a
+	 *   a: This feature must be enabled only when the slaves
+	 *      connected on the Cortex-A9 AXI master port support it.
+	 */
+	asm volatile (
+	"	mrc	p15, 0, r0, c1, c0, 1\n"
+	"	orr	r0, r0, #0x02\n"
+	"	mcr	p15, 0, r0, c1, c0, 1\n"
+	  :
+	  :
+	  : "r0", "cc");
 
 	return 0;
 }
@@ -306,17 +350,21 @@ early_initcall(l2_cache_init);
 
 static void __init s40_init_early(void)
 {
-#if CONFIG_PM
-	hi_pm_ddrbase = (unsigned long)alloc_bootmem((DDR_SUSPEND_SIZE << 1));
-	if (!hi_pm_ddrbase) {
-		edb_trace();
-		return;
-	}
-	hi_pm_phybase = __pa(hi_pm_ddrbase);
-#endif
 	clkdev_add_table(lookups, ARRAY_SIZE(lookups));
 
 	arch_cpu_init();
+
+	/*
+	 * 1. enable L1 prefetch                       [2]
+	 * 4. enable allocation in one cache way only. [8]
+	 */
+	asm volatile (
+	"	mrc	p15, 0, r0, c1, c0, 1\n"
+	"	orr	r0, r0, #0x104\n"
+	"	mcr	p15, 0, r0, c1, c0, 1\n"
+	  :
+	  :
+	  : "r0", "cc");
 
 	edb_trace();
 }
@@ -324,7 +372,22 @@ static void __init s40_init_early(void)
 
 void s40_restart(char mode, const char *cmd)
 {
-	writel(0x12345678, IO_ADDRESS(REG_BASE_SCTL + REG_SC_SYSRES));
+	mdelay(200);
+
+	printk(KERN_INFO "Cpu will restart.");
+
+	local_irq_disable();
+
+	/* unclock wdg */
+	writel(0x1ACCE551,  IO_ADDRESS(REG_BASE_WDG0 + 0xc00));
+	/* wdg load value */
+	writel(0x00000100,  IO_ADDRESS(REG_BASE_WDG0 + 0x0));
+	/* bit0: int enable bit1: reboot enable */
+	writel(0x00000003,  IO_ADDRESS(REG_BASE_WDG0 + 0x8));
+
+	while (1);
+
+	BUG();
 }
 /*****************************************************************************/
 extern struct sys_timer s40_sys_timer;

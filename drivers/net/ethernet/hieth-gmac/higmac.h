@@ -10,6 +10,7 @@
 #include <linux/interrupt.h>
 #include <mach/platform.h>
 #include <mach/irqs.h>
+#include "phy_fix.h"
 
 #define HIGMAC_DRIVER_NAME	"hi_gmac_v200"
 
@@ -19,10 +20,10 @@
 #define HIGMAC_IOSIZE			(0x1000)
 #define HIGMAC_OFFSET			(HIGMAC_IOSIZE)
 
-#define RAW_INT_ALL_MASK		0xffffffff
-
 #define RX_BQ_IN_INT			(1<<17)
+#define TX_RQ_IN_INT			(1<<19)
 #define RX_BQ_IN_TIMEOUT_INT		(1<<28)
+#define TX_RQ_IN_TIMEOUT_INT		(1<<29)
 
 #define RX_OUTCFF_WR_DESC_ENA		(1<<3)
 #define RX_CFF_RD_DESC_ENA		(1<<2)
@@ -60,19 +61,22 @@ enum {/* DEFAULT: duplex_full */
 #define HIGMAC_SPD_100M		(1 << 3)
 #define HIGMAC_SPD_1000M	(1 << 4)
 
-#define DEFAULT_LINK_STAT	(HIGMAC_DUP_FULL)
+#define DEFAULT_INTEPHY_LINK_STAT	(HIGMAC_DUP_FULL)
 
-#define HIGMAC_INTERNAL_FEPHY_ID	(0x20669813)
-#define RX_BQ_INT_THRESHOLD	128
+#define DEFAULT_LINK_STAT	((ld->phy->phy_id == HISILICON_PHY_ID_FESTAV200)\
+				? DEFAULT_INTEPHY_LINK_STAT : 0)
 
-#define HIGMAC_MAX_QUEUE_DEPTH	CONFIG_HIGMAC_MAX_QUEUE_DEPTH
+#define RX_BQ_INT_THRESHOLD	0x40/* TODO: */
+#define TX_RQ_INT_THRESHOLD	0x20/* TODO: */
 
-#define HIGMAC_HWQ_RX_FQ_DEPTH	HIGMAC_MAX_QUEUE_DEPTH//CONFIG_HIGMAC_HWQ_RX_FQ_DEPTH
-#define HIGMAC_HWQ_RX_BQ_DEPTH	HIGMAC_MAX_QUEUE_DEPTH//CONFIG_HIGMAC_HWQ_RX_BQ_DEPTH
-#define HIGMAC_HWQ_TX_BQ_DEPTH	HIGMAC_MAX_QUEUE_DEPTH//CONFIG_HIGMAC_HWQ_TX_BQ_DEPTH
-#define HIGMAC_HWQ_TX_RQ_DEPTH	HIGMAC_MAX_QUEUE_DEPTH//CONFIG_HIGMAC_HWQ_TX_RQ_DEPTH
+#define HIGMAC_MAX_QUEUE_DEPTH	(2048)
 
-#define HIGMAC_MONITOR_TIMER	(msecs_to_jiffies(100))
+#define HIGMAC_HWQ_RX_FQ_DEPTH	(256)
+#define HIGMAC_HWQ_RX_BQ_DEPTH	(HIGMAC_HWQ_RX_FQ_DEPTH)
+#define HIGMAC_HWQ_TX_BQ_DEPTH	(256)
+#define HIGMAC_HWQ_TX_RQ_DEPTH	(HIGMAC_HWQ_TX_BQ_DEPTH)
+
+#define HIGMAC_MONITOR_TIMER	(msecs_to_jiffies(200))
 
 #define MAX_RX_POOLS		SZ_1K
 #define HIETH_MAX_FRAME_SIZE	(1600+128)
@@ -109,7 +113,6 @@ struct higmac_desc {
 };
 
 struct higmac_adapter {
-	void	__iomem *sysctl_iobase;
 	void	__iomem *fwdctl_iobase;/* forwarding iobase */
 
 	spinlock_t	lock;
@@ -123,6 +126,8 @@ struct higmac_adapter {
 
 	unsigned int	debug_level;
 };
+
+#define SKB_MAGIC	((struct sk_buff *)0x5a)
 
 #define QUEUE_NUMS	(4)
 struct higmac_netdev_local {
@@ -155,13 +160,6 @@ struct higmac_netdev_local {
 
 	struct timer_list	monitor;
 
-	struct rx_skb_pool {
-		struct sk_buff	*sk_pool[MAX_RX_POOLS]; /* skb pool */
-		int		next_free_skb;		/*next free skb*/
-		/* pool state statistics */
-		unsigned long	rx_pool_dry_times;
-	} rx_pool;
-
 	char			phy_name[MII_BUS_ID_SIZE];
 	struct phy_device	*phy;
 	int (*eee_init)(struct phy_device *phy_dev);
@@ -188,11 +186,15 @@ struct higmac_board_info {
 	int phy_addr;
 	phy_interface_t phy_intf;
 	struct sockaddr macaddr;
+	/* use gpio to reset externl phy */
+	u32 gpio_base;
+	u32 gpio_bit;
 };
 
-#define CONFIG_GMAC_NUMS	(2)/* TODO: */
+#define MAX_GMAC_NUMS		(2)
+
 /* describe board configuration: phy_addr, phy_intf and mdio usage */
-extern struct higmac_board_info higmac_board_info[CONFIG_GMAC_NUMS];
+extern struct higmac_board_info higmac_board_info[MAX_GMAC_NUMS];
 
 static inline struct higmac_adapter *get_adapter(void)
 {
@@ -228,11 +230,9 @@ static inline struct higmac_netdev_local *get_netdev_local(int index)
 #define DEBUG_HW_RX_DESC	(1 << 0)
 #define DEBUG_HW_TX_DESC	(1 << 1)
 #define DEBUG_HW_IRQ		(1 << 2)
-#define DEBUG_DEFAULT		(DEBUG_HW_TX_DESC)/* TODO: change it to 0 */
+#define DEBUG_AUTOEEE		(1 << 3)
+#define DEBUG_DEFAULT		(0)/* TODO: change it to 0 */
 /* TODO: add more debug option here */
 #define debug(name)	(get_adapter()->debug_level & DEBUG_##name)
-
-
-struct sk_buff *higmac_dev_alloc_skb(struct higmac_netdev_local *ld);
 
 #endif

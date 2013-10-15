@@ -35,16 +35,17 @@ static inline int _hieth_read_irqstatus(struct hieth_netdev_local *ld)
 	return status;
 }
 
-int hieth_hw_set_macaddress(struct hieth_netdev_local *ld, int ena, unsigned char *mac)
+int hieth_hw_set_macaddress(struct hieth_netdev_local *ld, int ena,
+			    unsigned char *mac)
 {
 	unsigned long reg;
 
 	local_lock(ld);
 
-	reg = mac[1] | (mac[0] <<8);
+	reg = mac[1] | (mac[0] << 8);
 	hieth_writel(ld, reg, GLB_HOSTMAC_H16);
 
-	reg = mac[5] | (mac[4]<<8) | (mac[3]<<16) | (mac[2]<<24);
+	reg = mac[5] | (mac[4] << 8) | (mac[3] << 16) | (mac[2] << 24);
 	hieth_writel(ld, reg, GLB_HOSTMAC_L32);
 
 	local_unlock(ld);
@@ -59,13 +60,13 @@ int hieth_hw_get_macaddress(struct hieth_netdev_local *ld, unsigned char *mac)
 	local_lock(ld);
 
 	reg = hieth_readl(ld, GLB_HOSTMAC_H16);
-	mac[0] = (reg>>8) & 0xff;
+	mac[0] = (reg >> 8) & 0xff;
 	mac[1] = reg & 0xff;
 
 	reg = hieth_readl(ld, GLB_HOSTMAC_L32);
-	mac[2] = (reg>>24) & 0xff;
-	mac[3] = (reg>>16) & 0xff;
-	mac[4] = (reg>>8) & 0xff;
+	mac[2] = (reg >> 24) & 0xff;
+	mac[3] = (reg >> 16) & 0xff;
+	mac[4] = (reg >> 8) & 0xff;
 	mac[5] = reg & 0xff;
 
 	local_unlock(ld);
@@ -75,12 +76,14 @@ int hieth_hw_get_macaddress(struct hieth_netdev_local *ld, unsigned char *mac)
 
 static inline int _test_xmit_queue_ready(struct hieth_netdev_local *ld)
 {
-	return hieth_readl_bits(ld, UD_REG_NAME(GLB_RO_QUEUE_STAT), BITS_XMITQ_RDY);
+	return hieth_readl_bits(ld, UD_REG_NAME(GLB_RO_QUEUE_STAT),
+				BITS_XMITQ_RDY);
 }
 
 static inline int _test_recv_queue_ready(struct hieth_netdev_local *ld)
 {
-	return hieth_readl_bits(ld, UD_REG_NAME(GLB_RO_QUEUE_STAT), BITS_RECVQ_RDY);
+	return hieth_readl_bits(ld, UD_REG_NAME(GLB_RO_QUEUE_STAT),
+				BITS_RECVQ_RDY);
 }
 
 int hieth_irq_enable(struct hieth_netdev_local *ld, int irqs)
@@ -153,21 +156,21 @@ int hieth_set_endian_mode(struct hieth_netdev_local *ld, int mode)
 
 int hieth_set_hwq_depth(struct hieth_netdev_local *ld)
 {
-	hieth_assert( ld->depth.hw_xmitq>0  &&
-			ld->depth.hw_xmitq  <= HIETH_MAX_QUEUE_DEPTH);
+	hieth_assert(ld->depth.hw_xmitq > 0 &&
+		     ld->depth.hw_xmitq <= HIETH_MAX_QUEUE_DEPTH);
 
 	local_lock(ld);
 
-	if( (ld->depth.hw_xmitq) > HIETH_MAX_QUEUE_DEPTH) {
+	if ((ld->depth.hw_xmitq) > HIETH_MAX_QUEUE_DEPTH) {
 		local_unlock(ld);
 		BUG();
 		return -1;
 	}
 
-	hieth_writel_bits(ld, ld->depth.hw_xmitq, UD_REG_NAME(GLB_QLEN_SET), \
-		BITS_TXQ_DEP);
-	hieth_writel_bits(ld, HIETH_MAX_QUEUE_DEPTH - ld->depth.hw_xmitq, \
-		UD_REG_NAME(GLB_QLEN_SET), BITS_RXQ_DEP);
+	hieth_writel_bits(ld, ld->depth.hw_xmitq, UD_REG_NAME(GLB_QLEN_SET),
+			  BITS_TXQ_DEP);
+	hieth_writel_bits(ld, HIETH_MAX_QUEUE_DEPTH - ld->depth.hw_xmitq,
+			  UD_REG_NAME(GLB_QLEN_SET), BITS_RXQ_DEP);
 
 	local_unlock(ld);
 
@@ -187,20 +190,21 @@ int hieth_hw_xmitq_ready(struct hieth_netdev_local *ld)
 
 int hieth_xmit_release_skb(struct hieth_netdev_local *ld)
 {
-	int ret=0;
-	struct sk_buff* skb;
+	int ret = 0;
+	struct sk_buff *skb;
 
 	local_lock(ld);
 
-	while(hw_xmitq_cnt_inuse(ld) < ld->tx_hw_cnt){
+	while (hw_xmitq_cnt_inuse(ld) < ld->tx_hw_cnt) {
 
 		hieth_assert(ld->tx_hw_cnt);
 
 		skb = skb_dequeue(&ld->tx_hw);
 
-		if(!skb){
-			hieth_error("hw_xmitq_cnt_inuse=%d, tx_hw_cnt=%d\n", \
-				(int)hw_xmitq_cnt_inuse(ld), (int)ld->tx_hw_cnt);
+		if (!skb) {
+			hieth_error("hw_xmitq_cnt_inuse=%d, tx_hw_cnt=%d\n",
+				    (int)hw_xmitq_cnt_inuse(ld),
+				    (int)ld->tx_hw_cnt);
 
 			BUG();
 			ret = -1;
@@ -208,7 +212,7 @@ int hieth_xmit_release_skb(struct hieth_netdev_local *ld)
 		}
 		dev_kfree_skb_any(skb);
 
-		ld->tx_hw_cnt --;
+		ld->tx_hw_cnt--;
 	}
 
 error_exit:
@@ -218,22 +222,22 @@ error_exit:
 
 int hieth_xmit_real_send(struct hieth_netdev_local *ld, struct sk_buff *skb)
 {
-	int ret=0;
+	int ret = 0;
 
 	local_lock(ld);
 
-	if(!_test_xmit_queue_ready(ld)){
+	if (!_test_xmit_queue_ready(ld)) {
 		hieth_error("hw xmit queue is not ready");
 		ret = -1;
 		goto _trans_exit;
 	}
 
 	/* for recalc CRC, 4 bytes more is needed */
-	hw_xmitq_pkg(ld, virt_to_phys(skb->data), skb->len+4);
+	hw_xmitq_pkg(ld, virt_to_phys(skb->data), skb->len + 4);
 
 	skb_queue_tail(&ld->tx_hw, skb);
 
-	ld->tx_hw_cnt ++;
+	ld->tx_hw_cnt++;
 
 _trans_exit:
 	local_unlock(ld);
@@ -243,14 +247,15 @@ _trans_exit:
 
 extern struct sk_buff *hieth_platdev_alloc_skb(struct hieth_netdev_local *ld);
 
-int hieth_feed_hw(struct hieth_netdev_local* ld)
+int hieth_feed_hw(struct hieth_netdev_local *ld)
 {
-	struct sk_buff* skb;
+	struct sk_buff *skb;
 	int cnt = 0;
 
 	local_lock(ld);
 
-	while(hieth_readl_bits(ld, UD_REG_NAME(GLB_RO_QUEUE_STAT), BITS_RECVQ_RDY)){
+	while (hieth_readl_bits
+	       (ld, UD_REG_NAME(GLB_RO_QUEUE_STAT), BITS_RECVQ_RDY)) {
 
 		skb = dev_alloc_skb(SKB_SIZE);
 
@@ -259,13 +264,15 @@ int hieth_feed_hw(struct hieth_netdev_local* ld)
 
 		//hieth_error("+skb=0x%.8x", skb->data + 2);
 
-		dma_map_single(ld->dev, skb->data, HIETH_MAX_FRAME_SIZE, DMA_FROM_DEVICE);
+		dma_map_single(ld->dev, skb->data, HIETH_MAX_FRAME_SIZE,
+			       DMA_FROM_DEVICE);
 
-		hieth_writel(ld, virt_to_phys(skb->data + 2), UD_REG_NAME(GLB_IQ_ADDR));
+		hieth_writel(ld, virt_to_phys(skb->data + 2),
+			     UD_REG_NAME(GLB_IQ_ADDR));
 
 		skb_queue_tail(&ld->rx_hw, skb);
 
-		cnt ++;
+		cnt++;
 	}
 
 	local_unlock(ld);
@@ -275,33 +282,35 @@ int hieth_feed_hw(struct hieth_netdev_local* ld)
 
 int hieth_hw_recv_tryup(struct hieth_netdev_local *ld)
 {
-	struct sk_buff* skb;
+	struct sk_buff *skb;
 	uint32_t rlen;
 	int cnt = 0;
 
 	local_lock(ld);
 
-	while(is_recv_packet(ld)) {
+	while (is_recv_packet(ld)) {
 
 		rlen = hw_get_rxpkg_len(ld);
 		hw_set_rxpkg_finish(ld);
 
 		skb = skb_dequeue(&ld->rx_hw);
 
-		if (!skb){
-			hieth_error("chip told us to receive pkg, but no more can be received!\n");
+		if (!skb) {
+			hieth_error
+			    ("chip told us to receive pkg, but no more can be received!\n");
 			BUG();
 			break;
 		}
 
-		dma_map_single(ld->dev, skb->data, HIETH_MAX_FRAME_SIZE, DMA_FROM_DEVICE);
+		dma_map_single(ld->dev, skb->data, HIETH_MAX_FRAME_SIZE,
+			       DMA_FROM_DEVICE);
 		skb_reserve(skb, 2);
 		skb_put(skb, rlen);
 
 		//hieth_error("-skb=0x%.8x, len=%d", skb->data, skb->len);
 
 		skb_queue_tail(&ld->rx_head, skb);
-		cnt ++;
+		cnt++;
 	}
 
 	local_unlock(ld);

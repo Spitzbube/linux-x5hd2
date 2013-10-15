@@ -49,7 +49,7 @@
 
 static int ahci_skip_host_reset;
 int ahci_ignore_sss;
-static int fbs_en = 1;
+static int fbs_en = 0;
 EXPORT_SYMBOL_GPL(ahci_ignore_sss);
 
 module_param_named(skip_host_reset, ahci_skip_host_reset, int, 0444);

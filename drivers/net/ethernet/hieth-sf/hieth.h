@@ -67,16 +67,16 @@
 #define DOWN_PORT	1
 
 struct hieth_netdev_local {
-	unsigned long iobase;		/* virtual io addr */
-	unsigned long iobase_phys;	/* physical io addr */
-	int port;			/* 0 => up port, 1 => down port */
+	unsigned long iobase;	       /* virtual io addr */
+	unsigned long iobase_phys;     /* physical io addr */
+	int port;		       /* 0 => up port, 1 => down port */
 
 	struct device *dev;
 	struct net_device_stats stats;
 
-	struct sk_buff_head rx_head;	/*received pkgs*/
-	struct sk_buff_head rx_hw;	/*rx pkgs in hw*/
-	struct sk_buff_head tx_hw;	/*tx pkgs in hw*/
+	struct sk_buff_head rx_head;   /*received pkgs */
+	struct sk_buff_head rx_hw;     /*rx pkgs in hw */
+	struct sk_buff_head tx_hw;     /*tx pkgs in hw */
 	int tx_hw_cnt;
 
 	struct timer_list monitor;
@@ -142,7 +142,6 @@ struct hieth_netdev_local {
 #define hireg_writel(base, v, ofs) do{ writel((v), (base) + (ofs)); \
 	hireg_trace(2, "_writel(0x%04X) = 0x%08lX", (ofs), (unsigned long)(v)); \
 }while(0)
-
 
 #define hireg_writel_bits(base, v, ofs, bits_desc) do{ \
 	unsigned long _bits_desc = bits_desc; \

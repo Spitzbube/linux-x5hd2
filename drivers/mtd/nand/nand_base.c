@@ -49,7 +49,7 @@
 #include <linux/io.h>
 #include <linux/mtd/partitions.h>
 
-#include "hinfc_common.h"
+#include "hinfc_gen.h"
 
 /* Define default oob placement schemes for large and small page devices */
 static struct nand_ecclayout nand_oob_8 = {

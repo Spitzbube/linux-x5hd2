@@ -34,31 +34,23 @@ static int hi3716mv300_hinfc504_enable(struct clk *clk)
 	unsigned long reg_val;
 
 	reg_val = readl(S40_PERI_CRG24);
-
 	reg_val &= ~S40_PERI_CRG24_CLK_SEL_MASK;
-
 	reg_val |= (S40_PERI_CRG24_CLK_EN
 		| S40_PERI_CRG24_CLK_SEL_200M);
-
 	writel(reg_val, S40_PERI_CRG24);
 
 	return 0;
 }
 /*****************************************************************************/
 
-static int hi3716mv300_hinfc504_disable(struct clk *clk)
+static void hi3716mv300_hinfc504_disable(struct clk *clk)
 {
 	unsigned long reg_val;
 
 	reg_val = readl(S40_PERI_CRG24);
-
 	reg_val &= ~S40_PERI_CRG24_CLK_SEL_MASK;
-
 	reg_val &= ~S40_PERI_CRG24_CLK_EN;
-
 	writel(reg_val, S40_PERI_CRG24);
-
-	return 0;
 }
 /*****************************************************************************/
 

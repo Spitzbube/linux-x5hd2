@@ -221,5 +221,9 @@ depends on PPC32 || PPC64
 source "drivers/cpufreq/Kconfig.powerpc"
 endmenu
 
+menu "Hisilicon CPU frequency scaling config"
+depends on ARCH_S40
+source "drivers/cpufreq/Kconfig.hicpufreq"
+endmenu
 endif
 endmenu

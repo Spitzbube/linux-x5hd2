@@ -32,6 +32,7 @@
 
 #include "hi_mci_reg.h"
 #include "hi_mci.h"
+#include <mach/cpu-info.h>
 
 /*************************************************************************/
 #ifdef CONFIG_ARCH_GODBOX
@@ -84,7 +85,7 @@ static void hi_mci_sys_reset(struct himci_host *host)
 	himci_writel(reg_value, host->base + MCI_BMOD);
 
 	reg_value = himci_readl(host->base + MCI_CTRL);
-	reg_value |=  CTRL_RESET | FIFO_RESET | DMA_RESET;
+	reg_value |= CTRL_RESET | FIFO_RESET | DMA_RESET;
 	himci_writel(reg_value, host->base + MCI_CTRL);
 
 	local_irq_restore(flags);
@@ -93,8 +94,20 @@ static void hi_mci_sys_reset(struct himci_host *host)
 static void hi_mci_ctrl_power(struct himci_host *host, unsigned int flag)
 {
 	himci_trace(2, "begin");
+
+	if (flag == POWER_OFF)
+		himci_writel(0, host->base + MCI_RESET_N);
+
 	himci_writel(flag, host->base + MCI_PWREN);
-	mdelay(100);
+
+	if (flag == POWER_ON)
+		himci_writel(1, host->base + MCI_RESET_N);
+
+	if (in_interrupt()) {
+		mdelay(100);
+	} else {
+		msleep(100);
+	}
 }
 
 /**********************************************
@@ -148,7 +161,7 @@ static int hi_mci_wait_cmd(struct himci_host *host)
 			spin_unlock_irqrestore(&host->lock, flags);
 
 			himci_trace(3, "Other CMD is running,"
-				"please operate cmd again!");
+				    "please operate cmd again!");
 			return 1;
 		}
 		spin_unlock_irqrestore(&host->lock, flags);
@@ -250,8 +263,7 @@ static void hi_mci_init_card(struct himci_host *host)
 	himci_writel(tmp_reg, host->base + MCI_CTRL);
 
 	/* set timeout param */
-	himci_writel(DATA_TIMEOUT | RESPONSE_TIMEOUT,
-		host->base + MCI_TIMEOUT);
+	himci_writel(DATA_TIMEOUT | RESPONSE_TIMEOUT, host->base + MCI_TIMEOUT);
 
 	/* set FIFO param */
 	tmp_reg = 0;
@@ -276,7 +288,7 @@ static void hi_mci_detect_card(unsigned long arg)
 		detect_retry_count++;
 		if (detect_retry_count >= retry_count) {
 			himci_error("this is a dithering,"
-				"card detect error!");
+				    "card detect error!");
 			goto err;
 		}
 	}
@@ -338,7 +350,7 @@ static int hi_mci_setup_data(struct himci_host *host, struct mmc_data *data)
 
 	host->dma_sg = data->sg;
 	host->dma_sg_num = dma_map_sg(mmc_dev(host->mmc), data->sg,
-		data->sg_len, host->dma_dir);
+				      data->sg_len, host->dma_dir);
 	himci_assert(host->dma_sg_num);
 	himci_trace(2, "host->dma_sg_num is %d\n", host->dma_sg_num);
 
@@ -350,10 +362,10 @@ static int hi_mci_setup_data(struct himci_host *host, struct mmc_data *data)
 	}
 
 	himci_trace(2, "host->dma_paddr is 0x%08X,host->dma_vaddr is 0x%08X\n",
-		(unsigned int)host->dma_paddr,
-		(unsigned int)host->dma_vaddr);
+		    (unsigned int)host->dma_paddr,
+		    (unsigned int)host->dma_vaddr);
 
-	max_des = (PAGE_SIZE/sizeof(struct himci_des));
+	max_des = (PAGE_SIZE / sizeof(struct himci_des));
 	des = (struct himci_des *)host->dma_vaddr;
 	des_cnt = 0;
 
@@ -361,41 +373,37 @@ static int hi_mci_setup_data(struct himci_host *host, struct mmc_data *data)
 		sg_length = sg_dma_len(&data->sg[i]);
 		sg_phyaddr = sg_dma_address(&data->sg[i]);
 		himci_trace(2, "sg[%d] sg_length is 0x%08X,"
-			" sg_phyaddr is 0x%08X\n",
-			i,
-			(unsigned int)sg_length,
-			(unsigned int)sg_phyaddr);
+			    " sg_phyaddr is 0x%08X\n",
+			    i,
+			    (unsigned int)sg_length, (unsigned int)sg_phyaddr);
 		while (sg_length) {
 			des[des_cnt].idmac_des_ctrl =
-				DMA_DES_OWN | DMA_DES_NEXT_DES;
+			    DMA_DES_OWN | DMA_DES_NEXT_DES;
 			des[des_cnt].idmac_des_buf_addr = sg_phyaddr;
 			/* idmac_des_next_addr is paddr for dma */
 			des[des_cnt].idmac_des_next_addr = host->dma_paddr +
-				(des_cnt + 1) * sizeof(struct himci_des);
+			    (des_cnt + 1) * sizeof(struct himci_des);
 
 			if (sg_length >= 0x1F00) {
 				des[des_cnt].idmac_des_buf_size = 0x1F00;
 				sg_length -= 0x1F00;
 				sg_phyaddr += 0x1F00;
-			} else { /* data alignment */
+			} else {
+				/* data alignment */
 				des[des_cnt].idmac_des_buf_size = sg_length;
 				sg_length = 0;
 			}
 			himci_trace(2, "des[%d] vaddr  is 0x%08X",
-				i,
-				(unsigned int)&des[i]);
+				    i, (unsigned int)&des[i]);
 			himci_trace(2, "des[%d].idmac_des_ctrl is 0x%08X",
-				i,
-				(unsigned int)des[i].idmac_des_ctrl);
+				    i, (unsigned int)des[i].idmac_des_ctrl);
 			himci_trace(2, "des[%d].idmac_des_buf_size is 0x%08X",
-				i,
-				(unsigned int)des[i].idmac_des_buf_size);
+				    i, (unsigned int)des[i].idmac_des_buf_size);
 			himci_trace(2, "des[%d].idmac_des_buf_addr 0x%08X",
-				i,
-				(unsigned int)des[i].idmac_des_buf_addr);
+				    i, (unsigned int)des[i].idmac_des_buf_addr);
 			himci_trace(2, "des[%d].idmac_des_next_addr is 0x%08X",
-				i,
-				(unsigned int)des[i].idmac_des_next_addr);
+				    i,
+				    (unsigned int)des[i].idmac_des_next_addr);
 			des_cnt++;
 		}
 
@@ -408,12 +416,10 @@ out:
 	return ret;
 }
 
-static int hi_mci_exec_cmd(
-		struct himci_host *host,
-		struct mmc_command *cmd,
-		struct mmc_data *data)
+static int hi_mci_exec_cmd(struct himci_host *host,
+			   struct mmc_command *cmd, struct mmc_data *data)
 {
-	volatile cmd_arg_s  cmd_regs;
+	volatile cmd_arg_s cmd_regs;
 
 	himci_trace(2, "begin");
 	himci_assert(host);
@@ -472,7 +478,7 @@ static int hi_mci_exec_cmd(
 		break;
 	default:
 		himci_error("hi_mci: unhandled response type %02x\n",
-			mmc_resp_type(cmd));
+			    mmc_resp_type(cmd));
 		return -EINVAL;
 	}
 
@@ -496,9 +502,8 @@ static int hi_mci_exec_cmd(
 	return 0;
 }
 
-static void hi_mci_finish_request(
-		struct himci_host *host,
-		struct mmc_request *mrq)
+static void hi_mci_finish_request(struct himci_host *host,
+				  struct mmc_request *mrq)
 {
 	himci_trace(2, "begin");
 	himci_assert(host);
@@ -524,20 +529,20 @@ static void hi_mci_cmd_done(struct himci_host *host, unsigned int stat)
 	for (i = 0; i < 4; i++) {
 		if (mmc_resp_type(cmd) == MMC_RSP_R2)
 			cmd->resp[i] = himci_readl(host->base +
-				MCI_RESP3 - i * 0x4);
+						   MCI_RESP3 - i * 0x4);
 		else
 			cmd->resp[i] = himci_readl(host->base +
-				MCI_RESP0 + i * 0x4);
+						   MCI_RESP0 + i * 0x4);
 	}
 
 	if (stat & RTO_INT_STATUS) {
 		cmd->error = -ETIMEDOUT;
 		himci_trace(3, "irq cmd status stat = 0x%x is timeout error!",
-			stat);
+			    stat);
 	} else if (stat & (RCRC_INT_STATUS | RE_INT_STATUS)) {
 		cmd->error = -EILSEQ;
 		himci_trace(3, "irq cmd status stat = 0x%x is response error!",
-			stat);
+			    stat);
 	}
 }
 
@@ -549,18 +554,17 @@ static void hi_mci_data_done(struct himci_host *host, unsigned int stat)
 	himci_assert(host);
 	himci_assert(data);
 
-	dma_unmap_sg(mmc_dev(host->mmc), data->sg, data->sg_len,
-		host->dma_dir);
+	dma_unmap_sg(mmc_dev(host->mmc), data->sg, data->sg_len, host->dma_dir);
 
 	if (stat & (HTO_INT_STATUS | DRTO_INT_STATUS)) {
 		data->error = -ETIMEDOUT;
 		himci_trace(3, "irq data status stat = 0x%x is timeout error!",
-			stat);
+			    stat);
 	} else if (stat & (EBE_INT_STATUS | SBE_INT_STATUS |
-		FRUN_INT_STATUS | DCRC_INT_STATUS)) {
+			   FRUN_INT_STATUS | DCRC_INT_STATUS)) {
 		data->error = -EILSEQ;
 		himci_trace(3, "irq data status stat = 0x%x is data error!",
-			stat);
+			    stat);
 	}
 	if (!data->error)
 		data->bytes_xfered = data->blocks * data->blksz;
@@ -594,8 +598,8 @@ static int hi_mci_wait_cmd_complete(struct himci_host *host)
 			cmd_irq_reg = readl(host->base + MCI_RINTSTS);
 			if (cmd_irq_reg & CD_INT_STATUS) {
 				himci_writel((CD_INT_STATUS | RTO_INT_STATUS |
-					RCRC_INT_STATUS | RE_INT_STATUS),
-					host->base + MCI_RINTSTS);
+					      RCRC_INT_STATUS | RE_INT_STATUS),
+					     host->base + MCI_RINTSTS);
 				spin_unlock_irqrestore(&host->lock, flags);
 				hi_mci_cmd_done(host, cmd_irq_reg);
 				return 0;
@@ -619,25 +623,25 @@ static int hi_mci_wait_data_complete(struct himci_host *host)
 	himci_assert(data);
 
 	time = wait_event_timeout(host->intr_wait,
-		test_bit(HIMCI_PEND_DTO_b, &host->pending_events),
-		time);
+				  test_bit(HIMCI_PEND_DTO_b,
+					   &host->pending_events), time);
 
 	if ((time <= 0)
-		&& (!test_bit(HIMCI_PEND_DTO_b, &host->pending_events))) {
+	    && (!test_bit(HIMCI_PEND_DTO_b, &host->pending_events))) {
 		data->error = -ETIMEDOUT;
 		spin_lock_irqsave(&host->lock, flags);
 		data_irq_reg = himci_readl(host->base + MCI_RINTSTS);
 		spin_unlock_irqrestore(&host->lock, flags);
 		himci_trace(3, "wait data request complete is timeout! 0x%08X",
-			data_irq_reg);
+			    data_irq_reg);
 		return -1;
 	}
 
 	spin_lock_irqsave(&host->lock, flags);
 	data_irq_reg = himci_readl(host->base + MCI_RINTSTS);
 	himci_writel((HTO_INT_STATUS | DRTO_INT_STATUS | EBE_INT_STATUS
-		| SBE_INT_STATUS | FRUN_INT_STATUS | DCRC_INT_STATUS),
-		host->base + MCI_RINTSTS);
+		      | SBE_INT_STATUS | FRUN_INT_STATUS | DCRC_INT_STATUS),
+		     host->base + MCI_RINTSTS);
 
 	host->pending_events &= ~HIMCI_PEND_DTO_m;
 	spin_unlock_irqrestore(&host->lock, flags);
@@ -648,9 +652,8 @@ static int hi_mci_wait_data_complete(struct himci_host *host)
 	return 0;
 }
 
-static int hi_mci_wait_card_complete(
-		struct himci_host *host,
-		struct mmc_data *data)
+static int hi_mci_wait_card_complete(struct himci_host *host,
+				     struct mmc_data *data)
 {
 	unsigned int card_retry_count = 0;
 	unsigned long card_jiffies_timeout;
@@ -696,7 +699,7 @@ static void hi_mci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 
 	if (host->card_status == CARD_UNPLUGED) {
 		mrq->cmd->error = -ENODEV;
-		goto  request_end;
+		goto request_end;
 	}
 
 	/* prepare data */
@@ -756,7 +759,7 @@ static void hi_mci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 		if (mrq->stop) {
 			/* send stop command */
 			ret = hi_mci_exec_cmd(host, host->mrq->stop,
-				host->data);
+					      host->data);
 			if (ret) {
 				mrq->cmd->error = ret;
 				goto request_end;
@@ -815,7 +818,7 @@ static void hi_mci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 	tmp_reg = himci_readl(host->base + MCI_CTYPE);
 	tmp_reg &= ~(CARD_WIDTH_0 | CARD_WIDTH_1);
 
-	if (ios->bus_width == MMC_BUS_WIDTH_8){
+	if (ios->bus_width == MMC_BUS_WIDTH_8) {
 		tmp_reg |= CARD_WIDTH_0;
 		himci_writel(tmp_reg, host->base + MCI_CTYPE);
 	} else if (ios->bus_width == MMC_BUS_WIDTH_4) {
@@ -839,10 +842,23 @@ static int hi_mci_get_ro(struct mmc_host *mmc)
 	return ret;
 }
 
+static void hi_mci_hw_reset(struct mmc_host *mmc)
+{
+	struct himci_host *host = mmc_priv(mmc);
+
+	himci_writel(0, host->base + MCI_RESET_N);
+	/* For eMMC, minimum is 1us but give it 10us for good measure */
+	udelay(10);
+	himci_writel(1, host->base + MCI_RESET_N);
+	/* For eMMC, minimum is 200us but give it 300us for good measure */
+	usleep_range(300, 1000);
+}
+
 static const struct mmc_host_ops hi_mci_ops = {
 	.request = hi_mci_request,
 	.set_ios = hi_mci_set_ios,
-	.get_ro	 = hi_mci_get_ro,
+	.get_ro = hi_mci_get_ro,
+	.hw_reset = hi_mci_hw_reset,
 };
 
 static irqreturn_t hisd_irq(int irq, void *dev_id)
@@ -882,8 +898,8 @@ static int __devinit hi_mci_probe(struct platform_device *pdev)
 {
 	struct mmc_host *mmc;
 	struct himci_host *host = NULL;
-	struct resource * host_ioaddr_res = NULL;
-	struct resource * host_crg_res = NULL;
+	struct resource *host_ioaddr_res = NULL;
+	struct resource *host_crg_res = NULL;
 	int ret = 0, irq;
 
 	himci_trace(2, "begin");
@@ -898,14 +914,14 @@ static int __devinit hi_mci_probe(struct platform_device *pdev)
 	mmc->ops = &hi_mci_ops;
 	mmc->f_min = MMC_CCLK_MIN;
 	mmc->f_max = MMC_CCLK_MAX;
-	mmc->caps |= MMC_CAP_4_BIT_DATA | MMC_CAP_SD_HIGHSPEED | MMC_CAP_MMC_HIGHSPEED;
+	mmc->caps |=
+	    MMC_CAP_4_BIT_DATA | MMC_CAP_SD_HIGHSPEED | MMC_CAP_MMC_HIGHSPEED;
 	host_ioaddr_res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (NULL == host_ioaddr_res){
+	if (NULL == host_ioaddr_res) {
 		himci_error("no ioaddr rescources config!\n");
 		ret = -ENODEV;
 		goto out;
 	}
-
 #if defined(CONFIG_ARCH_GODBOX)
 #if defined(CONFIG_HIMCIV200_SDIO0_BUS_WIDTH_8)
 	mmc->caps |= MMC_CAP_8_BIT_DATA;
@@ -923,15 +939,13 @@ static int __devinit hi_mci_probe(struct platform_device *pdev)
 	mmc->max_hw_segs = 1024;
 	mmc->max_phys_segs = 1024;
 #endif
-	mmc->max_req_size = 65535;/* see IP manual */
+	mmc->max_req_size = 65535;	/* see IP manual */
 	mmc->ocr_avail = MMC_VDD_32_33 | MMC_VDD_33_34;
 	mmc->ocr = mmc->ocr_avail;
 
-
 	host = mmc_priv(mmc);
 	host->dma_vaddr = dma_alloc_coherent(&pdev->dev, PAGE_SIZE,
-		&host->dma_paddr,
-		GFP_KERNEL);
+					     &host->dma_paddr, GFP_KERNEL);
 	if (!host->dma_vaddr) {
 		himci_error("no mem for himci dma!\n");
 		ret = -ENOMEM;
@@ -949,7 +963,8 @@ static int __devinit hi_mci_probe(struct platform_device *pdev)
 
 	host_crg_res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
 	if (NULL == host_crg_res) {
-		himci_error("%s%d:no crg rescources config!\n", pdev->name, pdev->id);
+		himci_error("%s%d:no crg rescources config!\n", pdev->name,
+			    pdev->id);
 		ret = -ENODEV;
 		goto out;
 	}
@@ -1000,8 +1015,7 @@ out:
 			iounmap(host->base);
 		if (host->dma_vaddr)
 			dma_free_coherent(&pdev->dev, PAGE_SIZE,
-				host->dma_vaddr,
-				host->dma_paddr);
+					  host->dma_vaddr, host->dma_paddr);
 	}
 	if (mmc)
 		mmc_free_host(mmc);
@@ -1027,13 +1041,13 @@ static int __devexit hi_mci_remove(struct platform_device *pdev)
 		hi_mci_control_cclk(host, DISABLE);
 		iounmap(host->base);
 		dma_free_coherent(&pdev->dev, PAGE_SIZE, host->dma_vaddr,
-			host->dma_paddr);
+				  host->dma_paddr);
 		mmc_free_host(mmc);
 	}
 	return 0;
 }
 
-static int  hi_mci_shutdown(struct platform_device *pdev)
+static int hi_mci_shutdown(struct platform_device *pdev)
 {
 	struct mmc_host *mmc = platform_get_drvdata(pdev);
 
@@ -1042,7 +1056,7 @@ static int  hi_mci_shutdown(struct platform_device *pdev)
 		struct himci_host *host = mmc_priv(mmc);
 
 		val = himci_readl(host->base + MCI_CTRL);
-		val |=  CTRL_RESET | FIFO_RESET | DMA_RESET;
+		val |= CTRL_RESET | FIFO_RESET | DMA_RESET;
 		himci_writel(val, host->base + MCI_CTRL);
 
 		hi_mci_ctrl_power(host, POWER_OFF);
@@ -1094,11 +1108,12 @@ static int hi_mci_resume(struct platform_device *dev)
 	himci_assert(dev);
 
 	if (mmc) {
-		struct resource * host_crg_res = NULL;
+		struct resource *host_crg_res = NULL;
 		host = mmc_priv(mmc);
 		host_crg_res = platform_get_resource(dev, IORESOURCE_MEM, 1);
-		if (NULL == host_crg_res){
-			himci_error("%s%d:no crg rescources config!\n", dev->name, dev->id);
+		if (NULL == host_crg_res) {
+			himci_error("%s%d:no crg rescources config!\n",
+				    dev->name, dev->id);
 			ret = -ENODEV;
 			return ret;
 		}
@@ -1156,45 +1171,45 @@ static struct resource hi_mci_sdio1_resources[] = {
 	},
 };
 
-
 static void hi_mci_platdev_release(struct device *dev)
 {
 }
+
 static u64 himmc_dmamask = DMA_BIT_MASK(32);
 
 static struct platform_device hi_mci_sdio0_device = {
-	.name           = "hi_mci",
-	.id             = 0,
+	.name = "hi_mci",
+	.id = 0,
 	.dev = {
-		.release      = hi_mci_platdev_release,
-		.dma_mask     = &himmc_dmamask,
+		.release = hi_mci_platdev_release,
+		.dma_mask = &himmc_dmamask,
 		.coherent_dma_mask = DMA_BIT_MASK(32),
-	},
-	.num_resources  = ARRAY_SIZE(hi_mci_sdio0_resources),
-	.resource       = hi_mci_sdio0_resources,
+		},
+	.num_resources = ARRAY_SIZE(hi_mci_sdio0_resources),
+	.resource = hi_mci_sdio0_resources,
 };
 
 static struct platform_device hi_mci_sdio1_device = {
-	.name           = "hi_mci",
-	.id             = 1,
+	.name = "hi_mci",
+	.id = 1,
 	.dev = {
-		.release      = hi_mci_platdev_release,
-		.dma_mask     = &himmc_dmamask,
+		.release = hi_mci_platdev_release,
+		.dma_mask = &himmc_dmamask,
 		.coherent_dma_mask = DMA_BIT_MASK(32),
-	},
-	.num_resources  = ARRAY_SIZE(hi_mci_sdio1_resources),
-	.resource       = hi_mci_sdio1_resources,
+		},
+	.num_resources = ARRAY_SIZE(hi_mci_sdio1_resources),
+	.resource = hi_mci_sdio1_resources,
 };
 
 static struct platform_driver hi_mci_driver = {
-	.probe         = hi_mci_probe,
-	.remove        = hi_mci_remove,
-	.shutdown      = hi_mci_shutdown,
-	.suspend       = hi_mci_suspend,
-	.resume        = hi_mci_resume,
-	.driver        = {
-		.name          = DRIVER_NAME,
-	},
+	.probe = hi_mci_probe,
+	.remove = hi_mci_remove,
+	.shutdown = hi_mci_shutdown,
+	.suspend = hi_mci_suspend,
+	.resume = hi_mci_resume,
+	.driver = {
+		   .name = DRIVER_NAME,
+		   },
 };
 
 static int __init hi_mci_init(void)
@@ -1203,23 +1218,27 @@ static int __init hi_mci_init(void)
 
 	himci_trace(2, "begin");
 
-	ret = platform_device_register(&hi_mci_sdio0_device);
+	/* 
+	 * We should register SDIO1 first to make sure that 
+	 * the eMMC device,which connected to SDIO1 is mmcblk0.
+	 */
+	ret = platform_device_register(&hi_mci_sdio1_device);
 	if (ret) {
-		himci_error("sdio0 device register failed!");
+		himci_error("sdio1 device register failed!");
 		return ret;
 	}
 
-	ret = platform_device_register(&hi_mci_sdio1_device);
+	ret = platform_device_register(&hi_mci_sdio0_device);
 	if (ret) {
-		platform_device_unregister(&hi_mci_sdio0_device);
-		himci_error("sdio0 device register failed!");
+		platform_device_unregister(&hi_mci_sdio1_device);
+		himci_error("sdio1 device register failed!");
 		return ret;
 	}
 
 	ret = platform_driver_register(&hi_mci_driver);
 	if (ret) {
-		platform_device_unregister(&hi_mci_sdio0_device);
 		platform_device_unregister(&hi_mci_sdio1_device);
+		platform_device_unregister(&hi_mci_sdio0_device);
 		himci_error("Himci driver register failed!");
 		return ret;
 	}
@@ -1231,9 +1250,10 @@ static void __exit hi_mci_exit(void)
 	himci_trace(2, "begin");
 
 	platform_driver_unregister(&hi_mci_driver);
-	platform_device_unregister(&hi_mci_sdio0_device);
 	platform_device_unregister(&hi_mci_sdio1_device);
+	platform_device_unregister(&hi_mci_sdio0_device);
 }
+
 module_init(hi_mci_init);
 module_exit(hi_mci_exit);
 

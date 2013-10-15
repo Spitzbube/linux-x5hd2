@@ -33,6 +33,7 @@
 #define MCI_VERID		0x6C
 #define MCI_HCON		0x70
 #define MCI_UHS_REG		0x74
+#define MCI_RESET_N		0x78
 #define MCI_BMOD		0x80
 #define MCI_DBADDR		0x88
 #define MCI_IDSTS		0x8C
@@ -59,7 +60,7 @@
 #define HIMCI_CARD0    (1<<0)
 
 /* MCI_TIMEOUT(0x14) details: */
-#define DATA_TIMEOUT      (0xffffff<<8) /*bit 31-8: data read timeout param*/
+#define DATA_TIMEOUT      (0xffffff<<8) /*bit 31-8: data read timeout param */
 #define RESPONSE_TIMEOUT  0xff          /* bit 7-0: response timeout param */
 
 /* bit 0: enable of card clk*/
@@ -84,12 +85,10 @@
 #define ALL_INT_MASK				0x1ffff
 #define DTO_INT_MASK				(1<<3)
 
-
 /* MCI_CMD(0x2c) details:
    bit 31: cmd execute or load start param of interface clk bit
 */
 #define START_CMD         (1<<31)
-
 
 /* MCI_INTSTS(0x44) details */
 /***************************************************************/

@@ -57,20 +57,11 @@ struct fwd_mac_tbl {
 #define ADD_MC		1
 #define fwd_uc_tbl_del	fwd_mc_tbl_del
 
-#if defined(CONFIG_MACH_GODEYES)
-void fwd_suspend(struct higmac_adapter *adapter, int mode) {};
-void fwd_resume(struct higmac_adapter *adapter) {};
-void fwd_setup(struct higmac_adapter *adapter) {};
-void fwd_uc_mc_tbl_add(struct higmac_netdev_local *ld,
-	const unsigned char *addr, int entry, int mc) {};
-void fwd_mc_tbl_del(struct higmac_netdev_local *ld, int entry) {};
-#else
 void fwd_suspend(struct higmac_adapter *adapter, int mode);
 void fwd_resume(struct higmac_adapter *adapter);
 void fwd_setup(struct higmac_adapter *adapter);
 void fwd_uc_mc_tbl_add(struct higmac_netdev_local *ld,
 	const unsigned char *addr, int entry, int mc);
 void fwd_mc_tbl_del(struct higmac_netdev_local *ld, int entry);
-#endif
 
 #endif

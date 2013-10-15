@@ -11,12 +11,7 @@
 /*FIXME: need to be modified by s40v2 reg*/
 
 /* PLL Clock enable registers */
-#define	CRG_BASE	IO_ADDRESS(REG_BASE_CRG)
 #define	PMC_BASE	IO_ADDRESS(REG_BASE_PMC)
-
-#define	PERI_CRG18	(CRG_BASE + 0x048)
-#define	PERI_CRG_PLL86	(CRG_BASE + 0x0158)
-#define	PERI_CRG_PLL87	(CRG_BASE + 0x015c)
 
 #define	PERI_PMC4	(PMC_BASE + 0x010)
 #define	PERI_PMC2	(PMC_BASE + 0x08)

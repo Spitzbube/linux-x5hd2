@@ -87,6 +87,7 @@
 #include <linux/pkt_sched.h>
 #include <linux/mroute.h>
 #include <linux/netfilter_ipv4.h>
+#include <linux/kmemleak.h>
 #include <linux/random.h>
 #include <linux/jhash.h>
 #include <linux/rcupdate.h>
@@ -3505,6 +3506,8 @@ int __init ip_rt_init(void)
  */
 void __init ip_static_sysctl_init(void)
 {
-	register_sysctl_paths(ipv4_path, ipv4_skeleton);
+	struct ctl_table_header *hdr;
+	hdr = register_sysctl_paths(ipv4_path, ipv4_skeleton);
+	kmemleak_not_leak(hdr);
 }
 #endif

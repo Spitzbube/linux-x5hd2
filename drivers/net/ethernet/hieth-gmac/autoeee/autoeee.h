@@ -4,7 +4,6 @@
 #define MAC_EEE         1
 #define PHY_EEE         2
 #define PARTNER_EEE     2
-#define DEBUG           0
 
 struct phy_info {
 	char *name;

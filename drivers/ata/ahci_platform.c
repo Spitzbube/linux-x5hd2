@@ -26,7 +26,7 @@
 #include "ahci_sys.h"
 #include "hi_sata_dbg.h"
 
-static unsigned int ncq_en = 1;
+static unsigned int ncq_en = 0;
 module_param(ncq_en, uint, 0600);
 MODULE_PARM_DESC(ncq_en, "ahci ncq flag (default:1)");
 

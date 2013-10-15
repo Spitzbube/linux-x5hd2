@@ -134,10 +134,11 @@ int hieth_hw_xmitq_ready(struct hieth_netdev_local *ld);
 int hieth_xmit_real_send(struct hieth_netdev_local *ld, struct sk_buff *skb);
 
 int hieth_hw_recv_tryup(struct hieth_netdev_local *ld);
-int hieth_hw_set_macaddress(struct hieth_netdev_local *ld, int ena, unsigned char *mac);
+int hieth_hw_set_macaddress(struct hieth_netdev_local *ld, int ena,
+			    unsigned char *mac);
 int hieth_hw_get_macaddress(struct hieth_netdev_local *ld, unsigned char *mac);
 
-int hieth_feed_hw(struct hieth_netdev_local* ld);
+int hieth_feed_hw(struct hieth_netdev_local *ld);
 
 #endif
 

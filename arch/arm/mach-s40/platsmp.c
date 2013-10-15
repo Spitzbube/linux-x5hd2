@@ -77,6 +77,23 @@ static DEFINE_SPINLOCK(boot_lock);
 void __cpuinit platform_secondary_init(unsigned int cpu)
 {
 	/*
+	 * 1. enable L1 prefetch                       [2]
+	 * 2. enable L2 prefetch hint                  [1]a
+	 * 3. enable write full line of zeros mode.    [3]a
+	 * 4. enable allocation in one cache way only. [8]
+	 *   a: This feature must be enabled only when the slaves
+	 *      connected on the Cortex-A9 AXI master port support it.
+	 */
+	asm volatile (
+	"	mrc	p15, 0, r0, c1, c0, 1\n"
+	"	orr	r0, r0, #0x0104\n"
+	"	orr	r0, r0, #0x02\n"
+	"	mcr	p15, 0, r0, c1, c0, 1\n"
+	  :
+	  :
+	  : "r0", "cc");
+
+	/*
 	 * if any interrupts are already enabled for the primary
 	 * core (e.g. timer irq), then they will not have been enabled
 	 * for us: do so
@@ -191,7 +208,7 @@ void slave_cores_power_up(int cpu)
 	/* a9_core1_pmc_enable=1, PMC control power up cycle */
 	regval |= (1 << 7);
 
-	printk(KERN_DEBUG "CPU%u: powerup\n", cpu);
+//	printk(KERN_DEBUG "CPU%u: powerup\n", cpu);
 
 	__raw_writel(regval, IO_ADDRESS(REG_BASE_PMC));
 

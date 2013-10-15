@@ -11,11 +11,17 @@ MODULE_LICENSE("Dual MIT/GPL");
 #define PERI_CRG44            IO_ADDRESS(0xF8A22000 + 0xb0)
 #define USB3_VCC_SRST_REQ     (1<<13)
 #define USB3_VAUX_SRST_REQ    (1<<12)
+
+#define PERI_CRG45              IO_ADDRESS(0xF8A22000 + 0xb4)
+#define USB3_PHY_SRST_REQ       (0x1 << 4)
+#define USB3_PHY_SRST_TREQ      (0x1 << 5)
+
 #define PERI_USB5             IO_ADDRESS(0xF8A20000 + 0x134)
 
 #define REG_GCTL              0xc110
 #define BIT_SOFT_RESET        (0x1 << 11)
-#define BIT_PORT_DIR_HOST     (~(0x1 << 13))|(0x1 <<12)
+#define BIT13_PORT_DIR        (0x1 << 13)
+#define BIT12_PORT_DIR        (0x1 <<12)
 
 #define REG_GUSB3_PIPECTL     0xC2C0
 #define BIT_PHY_SOFT_RESET    (0x1 << 31)
@@ -32,57 +38,86 @@ static void hiusb_start_hcd(void __iomem *base)
 
 	local_irq_save(flags);
 
-		/*step 1: cancel reset*/
-		reg = readl(PERI_CRG44);
-		writel(reg&(~USB3_VCC_SRST_REQ), PERI_CRG44);
-		udelay(200);
+	/*step 1: cancel reset*/
+	reg = readl(PERI_CRG44);
+	reg &= (~USB3_VCC_SRST_REQ);
+	writel(reg, PERI_CRG44);
+	udelay(200);
 
-		/*step 2: config port power */
-		reg = readl(PERI_USB5);
-		writel(0X840, PERI_USB5);
-		udelay(200);
+	reg = readl(PERI_CRG44);
+	reg |= 0x107F;//0x1ff;
+	writel(reg, PERI_CRG44);
+	udelay(200);
+
+	reg = 0x431;
+	writel(reg, PERI_CRG45);
+
+	/*step 2: config port power */
+	reg = readl(PERI_USB5);
+	reg &= ~(0x3f<<8);
+	reg |= (0x39<<8);
+	writel(reg, PERI_USB5);
+	udelay(200);
 
 #ifdef CONFIG_S40_FPGA
-		/*step 3: USB2 PHY chose utmi 16bit interface */
-		reg = readl(base + REG_GUSB2_CFG);
-		writel(reg&(~BIT_UTMI_ULPI)|BIT_UTMI_8_16, base + REG_GUSB2_CFG);
-		wmb();
-		mdelay(20);
+	/*step 3: USB2 PHY chose utmi 16bit interface */
+	reg = readl(base + REG_GUSB2_CFG);
+	reg &=(~BIT_UTMI_ULPI);
+	reg |= BIT_UTMI_8_16;
+	writel(reg, base + REG_GUSB2_CFG);
+	wmb();
+	mdelay(20);
 #else
-		/*step 3: USB2 PHY chose utmi 8bit interface */
-		reg = readl(base + REG_GUSB2_CFG);
-		writel(reg&(~BIT_UTMI_ULPI)|(~BIT_UTMI_8_16), base + REG_GUSB2_CFG);
-		wmb();
-		mdelay(20);
+	/*step 3: USB2 PHY chose utmi 8bit interface */
+	reg = readl(base + REG_GUSB2_CFG);
+	reg &= (~BIT_UTMI_ULPI);
+	reg &= (~BIT_UTMI_8_16);
+	writel(reg, base + REG_GUSB2_CFG);
+	wmb();
+	mdelay(20);
 #endif
 
-		/*step 4: core soft reset */
-		reg = readl(base + REG_GCTL);
-		writel(reg | BIT_SOFT_RESET, base + REG_GCTL);
+	/*step 4: core soft reset */
+	reg = readl(base + REG_GCTL);
+	reg |= BIT_SOFT_RESET;
+	writel(reg, base + REG_GCTL);
 
-		/* usb3 phy soft reset */
-		reg = readl(base + REG_GUSB3_PIPECTL);
-		reg |= BIT_PHY_SOFT_RESET;
-		writel(reg, base + REG_GUSB3_PIPECTL);
-		mdelay(100);
-		reg = readl(base + REG_GUSB3_PIPECTL);
-		reg &= ~(BIT_PHY_SOFT_RESET);
-		writel(reg, base + REG_GUSB3_PIPECTL);
-		mdelay(500);
+	/* usb3 phy soft reset */
+	reg = readl(base + REG_GUSB3_PIPECTL);
+	reg |= BIT_PHY_SOFT_RESET;
+	writel(reg, base + REG_GUSB3_PIPECTL);
+	mdelay(100);
+	reg = readl(base + REG_GUSB3_PIPECTL);
+	reg &= (~BIT_PHY_SOFT_RESET);
+	writel(reg, base + REG_GUSB3_PIPECTL);
+	mdelay(500);
 
-		/* cancel core soft reset */
-		reg = readl(base + REG_GCTL);
-		writel(reg & (~BIT_SOFT_RESET), base + REG_GCTL);
-		mdelay(500);
+	/* cancel core soft reset */
+	reg = readl(base + REG_GCTL);
+	reg &= (~BIT_SOFT_RESET);
+	writel(reg, base + REG_GCTL);
+	mdelay(500);
 
-		/*setp 5: config port direction fro host */
-		reg = readl(base + REG_GCTL);
-		writel(reg & BIT_PORT_DIR_HOST, base + REG_GCTL);
-		mdelay(500);
+	/*setp 5: config port direction for host */
+	reg = readl(base + REG_GCTL);
+	reg &= (~BIT13_PORT_DIR);
+	reg |=  BIT12_PORT_DIR;
+	writel(reg, base + REG_GCTL);
+	mdelay(500);
 
-		reg = readl(PERI_CRG44);
-		writel(reg|0x1ff, PERI_CRG44);
-		udelay(200);
+	reg = readl(PERI_CRG44);
+	reg |= 0x107F;
+	writel(reg, PERI_CRG44);
+	udelay(200);
+
+	/* de-assert usb3phy hard-macro por */
+	reg = readl(PERI_CRG45);
+	reg &= ~USB3_PHY_SRST_REQ;
+	writel(reg, PERI_CRG45);
+	mdelay(20); /* wait long, until clock becomes steady */
+	reg = readl(PERI_CRG45);
+	reg &= ~USB3_PHY_SRST_TREQ; /* de-assert hsp hard-macro port reset */
+	writel(reg, PERI_CRG45);
 
 	local_irq_restore(flags);
 }
@@ -95,7 +130,8 @@ static void hiusb_stop_hcd(void)
 	local_irq_save(flags);
 
 	reg = readl(PERI_CRG44);
-	writel(reg|(USB3_VCC_SRST_REQ), PERI_CRG44);
+	reg |= USB3_VCC_SRST_REQ;
+	writel(reg, PERI_CRG44);
 	udelay(200);
 
 	local_irq_restore(flags);

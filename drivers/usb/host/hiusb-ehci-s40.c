@@ -10,6 +10,7 @@
 #include <linux/io.h>
 #include <asm/system.h>
 #include <asm/unaligned.h>
+#include <mach/cpu-info.h>
 
 #define PERI_CRG46                      IO_ADDRESS(0xF8A22000 + 0xb8)
 #define USB2_BUS_CKEN                   (1<<0)
@@ -56,14 +57,27 @@
 
 #define PERI_USB1                       IO_ADDRESS(0xF8A20000 + 0x124)
 #define PHY0_TXPREEMPAMPTUNE_MASK       ~(0x3 << 27)
-#define PHY0_TXPREEMPAMPTUNE_VALUE      (0x0 << 27)
+#define PHY0_TXPREEMPAMPTUNE_VALUE      (0x3 << 27)
+#define PHY0_SIDDQ_MASK                 ~(0x1 << 22)
+#define PHY0_SIDDQ_VALUE                (0x1 << 22)
 
 #define PERI_USB2                       IO_ADDRESS(0xF8A20000 + 0x128)
 #define PHY3_TXPREEMPAMPTUNE_MASK       ~(0x3 << 27)
 #define PHY3_TXPREEMPAMPTUNE_VALUE      (0x3 << 27)
 #define PHY3_TXVREFTUNE_MASK            ~(0xF << 0)
-#define PHY3_TXVREFTUNE_VALUE           (0x6 << 0)
+#define PHY3_TXVREFTUNE_VALUE           (0x8 << 0)
+#define PHY3_SIDDQ_MASK                 ~(0x1 << 22)
+#define PHY3_SIDDQ_VALUE                (0x1 << 22)
+
 #define PERI_USB4                       IO_ADDRESS(0xF8A20000 + 0x130)
+#define PHY2_TXPREEMPAMPTUNE_MASK       ~(0x3 << 27)
+#define PHY2_TXPREEMPAMPTUNE_VALUE      (0x3 << 27)
+#define PHY2_TXVREFTUNE_MASK            ~(0xF << 0)
+#define PHY2_TXVREFTUNE_VALUE           (0x8 << 0)
+#define PHY2_SIDDQ_MASK                 ~(0x1 << 22)
+#define PHY2_SIDDQ_VALUE                (0x1 << 22)
+
+extern long long get_chipid(void);
 
 static atomic_t dev_open_cnt = {
 	.counter = 0,
@@ -130,12 +144,18 @@ void hiusb_start_hcd(void)
 		reg &=~(USB_PHY0_SRST_TREQ
 			| USB_PHY1_SRST_TREQ
 			| USB_PHY2_SRST_TREQ);
-		reg |= (USB_PHY0_REFCLK_SEL
-			| USB_PHY1_REFCLK_SEL
-			| USB_PHY2_REFCLK_SEL
-			| USB_PHY0_REF_CKEN
-			| USB_PHY1_REF_CKEN
-			| USB_PHY2_REF_CKEN);
+		if (_HI3716CV200ES == get_chipid()) {
+			reg |= (USB_PHY0_REFCLK_SEL
+				| USB_PHY1_REFCLK_SEL
+				| USB_PHY2_REFCLK_SEL
+				| USB_PHY0_REF_CKEN
+				| USB_PHY1_REF_CKEN
+				| USB_PHY2_REF_CKEN);
+		} else {
+			reg |= (USB_PHY0_REF_CKEN
+				| USB_PHY1_REF_CKEN
+				| USB_PHY2_REF_CKEN);
+		}
 		writel(reg, PERI_CRG47);
 		udelay(300);
 
@@ -161,33 +181,51 @@ void hiusb_start_hcd(void)
 		udelay(200);
 
 		reg = readl(PERI_USB1);
-		reg &= PHY0_TXPREEMPAMPTUNE_MASK;
-		reg |= PHY0_TXPREEMPAMPTUNE_VALUE;
+		if (_HI3716CV200ES == get_chipid()) {
+			reg &= PHY0_TXPREEMPAMPTUNE_MASK;
+			reg |= PHY0_TXPREEMPAMPTUNE_VALUE;
+		}
+		reg &= PHY0_SIDDQ_MASK;
+		reg &= ~PHY0_SIDDQ_VALUE;
 		writel(reg, PERI_USB1);	
 		udelay(200);
 
 		reg = readl(PERI_USB2);
-		reg &= PHY3_TXPREEMPAMPTUNE_MASK;
-		reg |= PHY3_TXPREEMPAMPTUNE_VALUE;
+		if (_HI3716CV200ES == get_chipid()) {
+			reg &= PHY3_TXPREEMPAMPTUNE_MASK;
+			reg |= PHY3_TXPREEMPAMPTUNE_VALUE;
+		}
+		reg &= PHY3_SIDDQ_MASK;
+		reg &= ~PHY3_SIDDQ_VALUE;
 		writel(reg, PERI_USB2);	
 		udelay(200);
 
-		reg = readl(PERI_USB2);
-		reg &= PHY3_TXVREFTUNE_MASK;
-		reg |= PHY3_TXVREFTUNE_VALUE;
-		writel(reg, PERI_USB2);	
-		udelay(200);
+		if (_HI3716CV200ES == get_chipid()) {
+			reg = readl(PERI_USB2);
+			reg &= PHY3_TXVREFTUNE_MASK;
+			reg |= PHY3_TXVREFTUNE_VALUE;
+			writel(reg, PERI_USB2);
+			udelay(200);
+		}
 
-		/* Fix the disconnect issue Of Inno Phy */
-		writel(0xa207, PERI_USB4);
-		writel(0xe207, PERI_USB4);
-		writel(0xa207, PERI_USB4);
-		writel(0xa1a6, PERI_USB4);
-		writel(0xe1a6, PERI_USB4);
-		writel(0xa1a6, PERI_USB4);
-		writel(0xaa1b, PERI_USB4);
-		writel(0xea1b, PERI_USB4);
-		writel(0xaa1b, PERI_USB4);
+		if (_HI3716CV200ES == get_chipid()) {
+			/* Fix the disconnect issue Of Inno Phy */
+			writel(0xa207, PERI_USB4);
+			writel(0xe207, PERI_USB4);
+			writel(0xa207, PERI_USB4);
+			writel(0xa1a6, PERI_USB4);
+			writel(0xe1a6, PERI_USB4);
+			writel(0xa1a6, PERI_USB4);
+			writel(0xaa1b, PERI_USB4);
+			writel(0xea1b, PERI_USB4);
+			writel(0xaa1b, PERI_USB4);
+		} else {
+			reg = readl(PERI_USB4);
+			reg &= PHY0_SIDDQ_MASK;
+			reg &= ~PHY0_SIDDQ_VALUE;
+			writel(reg, PERI_USB4);	
+			udelay(200);
+		}
 
 	}
 	local_irq_restore(flags);
@@ -203,15 +241,6 @@ void hiusb_stop_hcd(void)
 	if (atomic_sub_return(1, &dev_open_cnt) == 0) {
 
 		int reg;
-		reg = readl(PERI_CRG46);
-		reg |=(USB2_BUS_SRST_REQ
-			| USB2_UTMI0_SRST_REQ
-			| USB2_UTMI1_SRST_REQ
-			| USB2_UTMI2_SRST_REQ
-			| USB2_HST_PHY_SYST_REQ
-			| USB2_OTG_PHY_SRST_REQ);
-		writel(reg, PERI_CRG46);
-		udelay(200);
 
 		reg = readl(PERI_CRG47);
 		reg |=(USB_PHY0_SRST_REQ
@@ -222,6 +251,31 @@ void hiusb_stop_hcd(void)
 			| USB_PHY2_SRST_TREQ);
 		writel(reg, PERI_CRG47);
 		udelay(100);
+
+		/* close clock */
+		reg = readl(PERI_CRG47);
+		reg &=~ (USB_PHY0_REFCLK_SEL
+			| USB_PHY1_REFCLK_SEL
+			| USB_PHY2_REFCLK_SEL
+			| USB_PHY0_REF_CKEN
+			| USB_PHY1_REF_CKEN
+			| USB_PHY2_REF_CKEN);
+		writel(reg, PERI_CRG47);
+		udelay(300);
+
+		/* close clock  */
+		reg = readl(PERI_CRG46);
+		reg &=~(USB2_BUS_CKEN
+			| USB2_OHCI48M_CKEN
+			| USB2_OHCI12M_CKEN
+			| USB2_OTG_UTMI_CKEN
+			| USB2_HST_PHY_CKEN
+			| USB2_UTMI0_CKEN
+			| USB2_UTMI1_CKEN
+			| USB2_UTMI2_CKEN
+			| USB2_ADP_CKEN);
+		writel(reg, PERI_CRG46);
+		udelay(200);
 	}
 	local_irq_restore(flags);
 }

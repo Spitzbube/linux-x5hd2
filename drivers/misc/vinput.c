@@ -24,6 +24,7 @@
 #include <asm/irq.h>
 #include <asm/setup.h>
 #include <linux/input.h>
+#include <linux/input/mt.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/platform_device.h>
@@ -39,15 +40,13 @@ static struct input_dev *vinput_mouse_dev = NULL;
 static struct input_dev *vinput_tc_dev = NULL;
 static struct input_dev *vinput_multi_tc_dev = NULL;
 
-struct finger_info
-{
+struct finger_info {
 	int x;
 	int y;
 	int press;
 };
 
-struct multi_touch_info
-{
+struct multi_touch_info {
 	int fingernr;
 	struct finger_info finger[MAX_FINGER_NUM];
 };
@@ -67,27 +66,24 @@ static int __init vinput_multi_tc_init(void)
 
 	set_bit(EV_SYN, vinput_multi_tc_dev->evbit);
 	set_bit(EV_KEY, vinput_multi_tc_dev->evbit);
-	set_bit(BTN_TOUCH, vinput_multi_tc_dev->keybit);
 	set_bit(EV_ABS, vinput_multi_tc_dev->evbit);
 
 	set_bit(BTN_TOUCH, vinput_multi_tc_dev->keybit);
 
+	input_mt_init_slots(vinput_multi_tc_dev, MAX_FINGER_NUM);
+
+	input_set_abs_params(vinput_multi_tc_dev, ABS_X, 0, 1280, 0, 0);
+	input_set_abs_params(vinput_multi_tc_dev, ABS_Y, 0, 720, 0, 0);
+	input_set_abs_params(vinput_multi_tc_dev, ABS_PRESSURE, 0, 255, 0, 0);
+	input_set_abs_params(vinput_multi_tc_dev, ABS_TOOL_WIDTH, 0, 15, 0, 0);
 	input_set_abs_params(vinput_multi_tc_dev,
-		ABS_X, 0, 1280, 0, 0);
+			     ABS_MT_POSITION_X, 0, 1280, 0, 0);
 	input_set_abs_params(vinput_multi_tc_dev,
-		ABS_Y, 0, 720, 0, 0);
+			     ABS_MT_POSITION_Y, 0, 720, 0, 0);
 	input_set_abs_params(vinput_multi_tc_dev,
-		ABS_PRESSURE, 0, 255,0,0);
+			     ABS_MT_TOUCH_MAJOR, 0, 255, 0, 0);
 	input_set_abs_params(vinput_multi_tc_dev,
-		ABS_TOOL_WIDTH, 0, 15, 0, 0);
-	input_set_abs_params(vinput_multi_tc_dev,
-		ABS_MT_POSITION_X, 0, 1280, 0, 0);
-	input_set_abs_params(vinput_multi_tc_dev,
-		ABS_MT_POSITION_Y, 0, 720, 0, 0);
-	input_set_abs_params(vinput_multi_tc_dev,
-		ABS_MT_TOUCH_MAJOR, 0, 255, 0, 0);
-	input_set_abs_params(vinput_multi_tc_dev,
-		ABS_MT_WIDTH_MAJOR, 0, 15, 0, 0);
+			     ABS_MT_WIDTH_MAJOR, 0, 15, 0, 0);
 
 	err = input_register_device(vinput_multi_tc_dev);
 	if (err) {
@@ -100,30 +96,43 @@ static int __init vinput_multi_tc_init(void)
 
 void vinput_multi_tc_event_report(void *data)
 {
-	struct multi_touch_info* info = NULL;
+	struct multi_touch_info *info = NULL;
 	int i = 0;
-	int count = 0;
-
-	info = (struct multi_touch_info*)data;
+	info = (struct multi_touch_info *)data;
 
 	if (info->fingernr > 0) {
-		if (info->fingernr>MAX_FINGER_NUM)
+		if (info->fingernr > MAX_FINGER_NUM)
 			info->fingernr = MAX_FINGER_NUM;
 
 		for (i = 0; i < info->fingernr; i++) {
-			input_report_abs(vinput_multi_tc_dev,
-				ABS_MT_POSITION_X, info->finger[i].x);
-			input_report_abs(vinput_multi_tc_dev,
-				ABS_MT_POSITION_Y, info->finger[i].y);
-			input_report_key(vinput_multi_tc_dev,
-				BTN_TOUCH, info->finger[i].press);
-			input_mt_sync(vinput_multi_tc_dev);
-			count++;
+			input_mt_slot(vinput_multi_tc_dev, i);
+			if (1 == info->finger[i].press) {
+				input_mt_report_slot_state(vinput_multi_tc_dev,
+							   MT_TOOL_FINGER,
+							   true);
+				input_report_key(vinput_multi_tc_dev,
+						 ABS_MT_TRACKING_ID, i);
+				input_report_abs(vinput_multi_tc_dev,
+						 ABS_MT_POSITION_X,
+						 info->finger[i].x);
+				input_report_abs(vinput_multi_tc_dev,
+						 ABS_MT_POSITION_Y,
+						 info->finger[i].y);
+			} else {
+				input_mt_report_slot_state(vinput_multi_tc_dev,
+							   MT_TOOL_FINGER,
+							   false);
+			}
 		}
-		if (!count)
-			input_mt_sync(vinput_multi_tc_dev);
+
+		if (1 == info->fingernr) {
+			input_mt_slot(vinput_multi_tc_dev, 1);
+			input_mt_report_slot_state(vinput_multi_tc_dev,
+						   MT_TOOL_FINGER, false);
+		}
+
+		input_mt_report_pointer_emulation(vinput_multi_tc_dev, true);
 		input_sync(vinput_multi_tc_dev);
-		printk(KERN_INFO "Multi Touch:  sync");
 	}
 }
 
@@ -209,7 +218,7 @@ static int __init vinput_kbd_init(void)
 		set_bit(iKey, vinput_kbd_dev->keybit);
 	}
 
-	vinput_kbd_dev->name    = "Hi keyboard";
+	vinput_kbd_dev->name = "Hi keyboard";
 	vinput_kbd_dev->id.vendor = 0x0001;
 	vinput_kbd_dev->id.product = 0x0001;
 	vinput_kbd_dev->id.version = 0x0100;
@@ -231,7 +240,7 @@ static void vinput_kbd_exit(void)
 		input_unregister_device(vinput_kbd_dev);
 }
 
-void vinput_kbd_report(int value,int status)
+void vinput_kbd_report(int value, int status)
 {
 	input_report_key(vinput_kbd_dev, value, status);
 	input_sync(vinput_kbd_dev);
@@ -264,7 +273,7 @@ static int __init vinput_mouse_init(void)
 	set_bit(BTN_EXTRA, vinput_mouse_dev->keybit);
 
 	err = input_register_device(vinput_mouse_dev);
-	if (err){
+	if (err) {
 		input_free_device(vinput_mouse_dev);
 		return err;
 	}
@@ -274,13 +283,13 @@ static int __init vinput_mouse_init(void)
 
 void vinput_mouse_event_report(int *data)
 {
-	input_report_key(vinput_mouse_dev, BTN_LEFT,   data[0] & 0x01);
-	input_report_key(vinput_mouse_dev, BTN_RIGHT,  data[0] & 0x02);
+	input_report_key(vinput_mouse_dev, BTN_LEFT, data[0] & 0x01);
+	input_report_key(vinput_mouse_dev, BTN_RIGHT, data[0] & 0x02);
 	input_report_key(vinput_mouse_dev, BTN_MIDDLE, data[0] & 0x04);
-	input_report_key(vinput_mouse_dev, BTN_SIDE,   data[0] & 0x08);
-	input_report_key(vinput_mouse_dev, BTN_EXTRA,  data[0] & 0x10);
-	input_report_rel(vinput_mouse_dev, REL_X,     data[1]);
-	input_report_rel(vinput_mouse_dev, REL_Y,     data[2]);
+	input_report_key(vinput_mouse_dev, BTN_SIDE, data[0] & 0x08);
+	input_report_key(vinput_mouse_dev, BTN_EXTRA, data[0] & 0x10);
+	input_report_rel(vinput_mouse_dev, REL_X, data[1]);
+	input_report_rel(vinput_mouse_dev, REL_Y, data[2]);
 	input_report_rel(vinput_mouse_dev, REL_WHEEL, data[3]);
 	input_sync(vinput_mouse_dev);
 }
@@ -291,12 +300,12 @@ static void vinput_mouse_exit(void)
 		input_unregister_device(vinput_mouse_dev);
 }
 
-static int vinput_open(struct inode * inode, struct file * file)
+static int vinput_open(struct inode *inode, struct file *file)
 {
 	return 0;
 }
 
-static int vinput_close(struct inode * inode, struct file * file)
+static int vinput_close(struct inode *inode, struct file *file)
 {
 	return 0;
 }
@@ -304,8 +313,8 @@ static int vinput_close(struct inode * inode, struct file * file)
 static long vinput_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	long ret = 0;
-	int data[4] = {0};
-	struct multi_touch_info info = {0};
+	int data[4] = { 0 };
+	struct multi_touch_info info = { 0 };
 
 	switch (cmd) {
 	case IOCTL_MOUSE_STATUS:
@@ -320,7 +329,7 @@ static long vinput_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (down_interruptible(&input_mutex))
 			return -ERESTARTSYS;
 
-		ret = copy_from_user(data,(int *)arg, sizeof(data));
+		ret = copy_from_user(data, (int *)arg, sizeof(data));
 		vinput_kbd_report(data[0], data[1]);
 		up(&input_mutex);
 		return ret;
@@ -337,13 +346,13 @@ static long vinput_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (down_interruptible(&input_mutex))
 			return -ERESTARTSYS;
 		ret = copy_from_user(&info, (struct multi_touch_info *)arg,
-			sizeof(info));
+				     sizeof(info));
 		vinput_multi_tc_event_report(&info);
 		up(&input_mutex);
 		return ret;
 	default:
 		printk(KERN_DEBUG "Error: Inappropriate ioctl "
-			"for device. cmd=%d\n", cmd);
+		       "for device. cmd=%d\n", cmd);
 		return -ENOTTY;
 	}
 
@@ -352,10 +361,10 @@ static long vinput_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 /* The various file operations we support.*/
 static struct file_operations vinput_fops = {
-	.owner           = THIS_MODULE,
-	.unlocked_ioctl  = vinput_ioctl,
-	.open            = vinput_open,
-	.release         = vinput_close
+	.owner = THIS_MODULE,
+	.unlocked_ioctl = vinput_ioctl,
+	.open = vinput_open,
+	.release = vinput_close
 };
 
 static struct miscdevice vinput_dev = {
@@ -389,7 +398,8 @@ static int input_probe(struct platform_device *pdev)
 
 	ret = vinput_multi_tc_init();
 	if (ret != 0) {
-		printk(KERN_ERR "could not register vinput MultiTc devices. \n");
+		printk(KERN_ERR
+		       "could not register vinput MultiTc devices. \n");
 		vinput_mouse_exit();
 		vinput_kbd_exit();
 		goto fail;
@@ -413,6 +423,7 @@ static int input_close(struct platform_device *pdev)
 
 	return 0;
 }
+
 #ifdef CONFIG_PM
 static int input_suspend(struct platform_device *pdev, pm_message_t state)
 {
@@ -429,28 +440,29 @@ static int input_resume(struct platform_device *pdev)
 #endif /* CONFIG_PM */
 
 static struct platform_driver input_driver = {
-	.probe   = input_probe,
-	.remove  = input_close,
+	.probe = input_probe,
+	.remove = input_close,
 #ifdef CONFIG_PM
 	.suspend = input_suspend,
-	.resume  = input_resume,
+	.resume = input_resume,
 #endif /* CONFIG_PM */
-	.driver  = {
-		.name  = "Input_For_Android",
-		.owner = THIS_MODULE,
-	},
+	.driver = {
+		   .name = "Input_For_Android",
+		   .owner = THIS_MODULE,
+		   },
 };
 
-static void input_dev_release(struct device* dev){
+static void input_dev_release(struct device *dev)
+{
 }
 
 static struct platform_device input_dev = {
 	.name = "Input_For_Android",
-	.id   = 0,
-	.dev  = {
-		.platform_data  = NULL,
-		.dma_mask = (u64*)~0,
-		.coherent_dma_mask = (u64)~0,
+	.id = 0,
+	.dev = {
+		.platform_data = NULL,
+		.dma_mask = (u64 *) ~ 0,
+		.coherent_dma_mask = (u64) ~ 0,
 		.release = input_dev_release,
 	},
 };

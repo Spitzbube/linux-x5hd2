@@ -1,7 +1,7 @@
 
 #define PERI_CRG32		IO_ADDRESS(0x20030080)
 #define SDIO0CLK_PCTRL		(1U << 3)
-#define SDIO0CLK_SEL_50M	(1U << 2) /* 50MHz */
+#define SDIO0CLK_SEL_50M	(1U << 2)	/* 50MHz */
 #define SDIO0_CKEN		(1U << 1)
 #define SYS_PERIPHCTRL14	IO_ADDRESS(0x2005003c)
 #define SDIO0_DET_MODE		(1U << 2)

@@ -29,7 +29,10 @@
 #define INTNR_I2C3              (HISI_GIC_IRQ_START + 25)
 #define INTNR_UART0             (HISI_GIC_IRQ_START + 49)
 #define INTNR_UART1             (HISI_GIC_IRQ_START + 50)
+#define INTNR_UART2             (HISI_GIC_IRQ_START + 51)
 #define INTNR_UART3             (HISI_GIC_IRQ_START + 52)
+#define INTNR_UART4             (HISI_GIC_IRQ_START + 53)
+
 #define INTNR_ETH               (HISI_GIC_IRQ_START + 51)
 #define INTNR_L2CACHE_CHK0_INT  (HISI_GIC_IRQ_START + 72)
 #define INTNR_L2CACHE_CHK1_INT  (HISI_GIC_IRQ_START + 73)

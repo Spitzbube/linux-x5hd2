@@ -155,7 +155,6 @@ static void romblock_remove_dev(struct mtd_blktrans_dev *dev)
 	if(dev_cont->block_map != NULL)
 		kfree(dev_cont->block_map);
 	del_mtd_blktrans_dev(dev);
-	kfree(dev_cont);
 }
 
 static struct mtd_blktrans_ops romblock_tr = {

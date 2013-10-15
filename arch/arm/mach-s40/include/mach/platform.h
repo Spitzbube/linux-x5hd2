@@ -32,7 +32,9 @@
 
 #define REG_BASE_UART0                                  0xF8B00000
 #define REG_BASE_UART1                                  0xF8006000
+#define REG_BASE_UART2                                  0xF8B02000
 #define REG_BASE_UART3                                  0xF8B03000
+#define REG_BASE_UART4                                  0xF8B04000
 #define REG_BASE_CUR_UART                               REG_BASE_UART0
 
 #define REG_BASE_PERI_CTRL                              0xF8A20000
@@ -101,12 +103,31 @@
 #define REG_SC_GEN14                                    0x00B8
 #define REG_SC_GEN15                                    0x00BC
 #define REG_SC_GEN16                                    0x00C0
+#define REG_SC_GEN17                                    0x00C4
+#define REG_SC_GEN18                                    0x00C8
+#define REG_SC_GEN19                                    0x00CC
+#define REG_SC_GEN20                                    0x00D0
+#define REG_SC_GEN21                                    0x00D4
+#define REG_SC_GEN22                                    0x00D8
+#define REG_SC_GEN23                                    0x00DC
+#define REG_SC_GEN24                                    0x00E0
+#define REG_SC_GEN25                                    0x00E4
+#define REG_SC_GEN26                                    0x00E8
+#define REG_SC_GEN27                                    0x00EC
+#define REG_SC_GEN28                                    0x00F0
+#define REG_SC_GEN29                                    0x00F4
+#define REG_SC_GEN30                                    0x00F8
+#define REG_SC_GEN31                                    0x00FC
 #define REG_SC_LOCKEN                                   0x020C
 #define REG_SC_SYSID0                                   0x0EE0
 #define REG_SC_SYSID1                                   0x0EE4
 #define REG_SC_SYSID2                                   0x0EE8
 #define REG_SC_SYSID3                                   0x0EEC
 
+#define REG_PERI_SOC_FUSE                               0x840
+
+#define REG_BASE_WDG0                                   0xF8A2C000
+#define REG_BASE_WDG1                                   0xF8A2D000
 
 #define CFG_GIC_CPU_BASE    (IO_ADDRESS(REG_BASE_A9_PERI) + REG_A9_PERI_GIC_CPU)
 #define CFG_GIC_DIST_BASE   (IO_ADDRESS(REG_BASE_A9_PERI) + REG_A9_PERI_GIC_DIST)

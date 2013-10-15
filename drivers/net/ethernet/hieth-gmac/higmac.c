@@ -21,31 +21,31 @@
 #include <asm/setup.h>
 #include <linux/proc_fs.h>
 #include <linux/module.h>
+#include <linux/tags.h>
 
 #include "util.h"
 #include "higmac.h"
 #include "ctrl.h"
 #include "mdio.h"
 #include "forward.h"
-#include "fephy_fix.h"
 #include "autoeee/autoeee.h"
 #include "sockioctl.h"
 
 #define	mdio_bus_0		"mdio0"
 #define	mdio_bus_1		"mdio1"
 
-struct higmac_board_info higmac_board_info[CONFIG_GMAC_NUMS] = {
+struct higmac_board_info higmac_board_info[MAX_GMAC_NUMS] = {
 	{
 		.gmac_name	= "gmac0",
 		.mii_name	= mdio_bus_0,
 		.phy_addr	= CONFIG_HIGMAC_PHY0_ADDR,
-		.phy_intf	= PHY_INTERFACE_MODE_MII,
+		.phy_intf	= CONFIG_HIGMAC_PHY0_INTERFACE_MODE,
 	},
 	{
 		.gmac_name	= "gmac1",
 		.mii_name	= mdio_bus_0,
 		.phy_addr	= CONFIG_HIGMAC_PHY1_ADDR,
-		.phy_intf	= PHY_INTERFACE_MODE_MII,
+		.phy_intf	= CONFIG_HIGMAC_PHY1_INTERFACE_MODE,
 	}
 };
 
@@ -54,10 +54,14 @@ const char *mii_to_str[] = {
 	[PHY_INTERFACE_MODE_RMII] = "rmii",
 	[PHY_INTERFACE_MODE_RGMII] = "rgmii"
 };
-static char *mdio_bus[CONFIG_GMAC_NUMS] = {
+static char *mdio_bus[MAX_GMAC_NUMS] = {
 	mdio_bus_0,
 	mdio_bus_1
 };
+
+/* default, disable autoeee func */
+static bool enable_autoeee = false;
+module_param(enable_autoeee, bool, S_IRUGO | S_IWUSR);
 
 /* module parameters
  * phy_intf=rgmii,mii	==> eth0 use rgmii interface, eth1 use mii interface;
@@ -66,7 +70,7 @@ static char *mdio_bus[CONFIG_GMAC_NUMS] = {
  * use_mdio=0,1		==> eth0 use mdio0, eth1 use mdio1;
  * use_mdio=1		==> eth0 and eth1 both use mdio1;
  */
-static int __init hieth_parse_tag(const struct tag *tag)
+static int hieth_parse_tag(const struct tag *tag)
 {
 	const char *tags = (const char *)&tag->u.cmdline.cmdline, *name;
 	phy_interface_t phy_intf;
@@ -188,13 +192,98 @@ __tagtable(CONFIG_HIETH_TAG, hieth_parse_tag);
 
 static int __init hieth_macaddr_parse_tag(const struct tag *tag)
 {
-	if (tag->hdr.size == 4) {
-		memcpy(higmac_board_info[0].macaddr.sa_data, &tag->u, 6);
-		memcpy(higmac_board_info[1].macaddr.sa_data, &tag->u, 6);
+	int i;
+
+	if (tag->hdr.size != 4) {
+		pr_err("ethaddr tag size error!\n");
+		return 0;
 	}
+
+	for (i = 0; i < CONFIG_GMAC_NUMS; i++)
+		memcpy(higmac_board_info[i].macaddr.sa_data, &tag->u, 6);
+
 	return 0;
 }
-__tagtable(CONFIG_ETHADDR_TAG, hieth_macaddr_parse_tag);
+__tagtable(CONFIG_ETHADDR_TAG, hieth_macaddr_parse_tag);/* TODO */
+
+static void string_to_mac(unsigned char *mac, char* s)
+{
+	int i;
+	char *e;
+
+	for (i = 0; i < 6; ++i) {
+		mac[i] = s ? simple_strtoul(s, &e, 16) : 0;
+		if (s)
+			s = (*e) ? (e + 1) : e;
+	}
+}
+
+/* get board info from common tags and convert to old interface */
+void get_board_info(void)
+{
+	char str[25], buf[100];
+	char *tag = &buf[0];
+	unsigned char mac[6];
+	int i, len;
+	
+	tag += sizeof(struct tag_header);
+
+	/* use common tags if it exists, see kernel/tags.c */
+	memset(str, 0, sizeof(str));
+	len = get_param_data("phyintf", str, sizeof(str));
+	/* str="mii,rgmii", len=9 */
+	if (len > 0) {
+		len = snprintf(tag, sizeof(str), "phy_intf=%s;", str);
+		tag += len;
+	}
+
+	memset(str, 0, sizeof(str));
+	len = get_param_data("phyaddr", str, sizeof(str));
+	if (len > 0) {
+		len = snprintf(tag, sizeof(str), "phy_addr=%s;", str);
+		tag += len;
+	}
+
+	memset(str, 0, sizeof(str));
+	len = get_param_data("phymdio", str, sizeof(str));
+	if (len > 0) {
+		len = snprintf(tag, sizeof(str), "use_mdio=%s;", str);
+		tag += len;
+	}
+
+	*tag = '\0';
+
+	/* pr_info("%s\n", &buf[0] + sizeof(struct tag_header)); */
+	hieth_parse_tag((const struct tag *)buf);
+
+	memset(str, 0, sizeof(str));
+	len = get_param_data("ethaddr", str, sizeof(str));
+	if (len > 0) {
+		string_to_mac(&mac[0], str);
+		for (i = 0; i < CONFIG_GMAC_NUMS; i++)
+			memcpy(higmac_board_info[i].macaddr.sa_data, mac, 6);//TODO:
+	}
+
+	memset(str, 0, sizeof(str));
+	len = get_param_data("phyio0", str, sizeof(str));
+	if (len > 0) {
+		memcpy(&higmac_board_info[0].gpio_base, str, sizeof(u32) * 2);
+		pr_info("phy0_gpiobase=0x%x, gpio_bit=%x\n",
+				higmac_board_info[0].gpio_base,
+				higmac_board_info[0].gpio_bit);
+	}
+#if	(CONFIG_GMAC_NUMS > 1)
+	memset(str, 0, sizeof(str));
+	len = get_param_data("phyio1", str, sizeof(str));
+	if (len > 0) {
+		memcpy(&higmac_board_info[1].gpio_base, str, sizeof(u32) * 2);
+		pr_info("phy1_gpiobase=0x%x, gpio_bit=%x\n",
+				higmac_board_info[1].gpio_base,
+				higmac_board_info[1].gpio_bit);
+	}
+#endif
+	return;
+}
 
 #if defined(CONFIG_MACH_GODEYES)
 /*
@@ -284,7 +373,7 @@ static void higmac_gmac_multicast_list(struct net_device *dev)
 
 		if (netdev_mc_empty(dev) || !(dev->flags & IFF_MULTICAST)) {
 			/* haven't join any mc group */
-			higmac_writel(ld, 0, PORT_MC_ADDR_LOW);
+			higmac_writel(0, PORT_MC_ADDR_LOW);
 			higmac_writel_bits(ld, 0, PORT_MC_ADDR_HIGH,
 					BIT_PORT_MC_ADDR_HIGH);
 			higmac_writel_bits(ld, 1, REC_FILT_CONTROL, BIT_MC_MATCH_EN);
@@ -296,14 +385,22 @@ static void higmac_gmac_multicast_list(struct net_device *dev)
 
 				d = (ha->addr[2] << 24) | (ha->addr[3] << 16)
 					| (ha->addr[4] << 8) | (ha->addr[5]);
-				higmac_writel(ld, d, PORT_MC_ADDR_LOW);
+				higmac_writel(d, PORT_MC_ADDR_LOW);
 			}
 			higmac_writel_bits(ld, 1, REC_FILT_CONTROL, BIT_MC_MATCH_EN);
 		} else
 			higmac_writel_bits(ld, 0, REC_FILT_CONTROL, BIT_MC_MATCH_EN);
 	}
 }
-
+#define RX_FQ_RD	0
+#define RX_FQ_WR	1
+#define RX_BQ_RD	2
+#define RX_BQ_WR	3
+#define TX_BQ_RD	4
+#define TX_BQ_WR	5
+#define TX_RQ_RD	6
+#define TX_RQ_WR	7
+u32 offset[MAX_GMAC_NUMS][8];
 /*
  * the func stop the hw desc and relaim the software skb resource
  * before reusing the gmac, you'd better reset the gmac
@@ -311,93 +408,69 @@ static void higmac_gmac_multicast_list(struct net_device *dev)
 void higmac_reclaim_rx_tx_resource(struct higmac_netdev_local *ld)
 {
 	unsigned long rxflags, txflags;
-	struct sk_buff *skb = NULL;
 	int rd_offset, wr_offset;
-	int i, users;
+	int i;
 
-	higmac_irq_disable(ld, RX_BQ_IN_INT | RX_BQ_IN_TIMEOUT_INT);
+	higmac_irq_disable(ld);
 	higmac_hw_desc_disable(ld);
 
-	/* skb->users state-machine
-	 * users = 1, means it's free and in the skb pool
-	 * users = 2 && skb[pos] != NULL  means it's in the hw_desc
-	 * users = 2 && skb[pos] == NULL  means it's in the net_stack
-	 * users = 1
-	 */
 	spin_lock_irqsave(&ld->rxlock, rxflags);
-	for (i = 0; i < ld->rx_fq.count; i++) {
-		skb = ld->rx_fq.skb[i];
-		if (skb) {
-			users = atomic_read(&skb->users);
-			if (users == 2)/* hold by hw_rx_desc */
-				atomic_dec(&skb->users);
-			else
-				pr_err("skb[%d]=%p, users=%d\t",
-						i, skb, users);
-
-			ld->rx_fq.skb[i] = NULL;
-			ld->rx_bq.use_cnt++;
-			/* TODO: need to unmap the skb here
-			 * but there is no way to get the dma_addr here,
-			 * and unmap(TO_DEVICE) ops do nothing in fact,
-			 * so we ignore to call 
-			 * dma_unmap_single(dev, dma_addr, skb->len,
-			 *	DMA_TO_DEVICE)
-			 */
-		}
-	}
 	/* rx_bq: logic write pointer */
 	wr_offset = readl(ld->gmac_iobase + RX_BQ_WR_ADDR);
+	offset[ld->index][RX_BQ_WR] = wr_offset;
 	/* rx_bq: software read pointer */
 	rd_offset = readl(ld->gmac_iobase + RX_BQ_RD_ADDR);
 	/* FIXME: prevent to reclaim skb in rx bottom half */
 	writel(wr_offset, ld->gmac_iobase + RX_BQ_RD_ADDR);
+	offset[ld->index][RX_BQ_RD] = wr_offset;
 
 	/* rx_fq: software write pointer */
 	wr_offset = readl(ld->gmac_iobase + RX_FQ_WR_ADDR);
 	/* rx_fq: logic read pointer */
 	rd_offset = readl(ld->gmac_iobase + RX_FQ_RD_ADDR);
+	offset[ld->index][RX_FQ_RD] = rd_offset;
 	if (!rd_offset)
 		rd_offset = (HIGMAC_HWQ_RX_FQ_DEPTH - 1) << 5;
 	else
 		rd_offset -= DESC_SIZE;
 	/* FIXME: stop to feed hw desc */
 	writel(rd_offset, ld->gmac_iobase + RX_FQ_WR_ADDR);
+	offset[ld->index][RX_FQ_WR] = rd_offset;
 
-	/* DEBUG code */
-	ld->rx_fq.use_cnt = 0;
-	ld->rx_bq.use_cnt = 0;
+	for (i = 0; i < ld->rx_fq.count; i++) {
+		if (!ld->rx_fq.skb[i])
+			ld->rx_fq.skb[i] = SKB_MAGIC;
+	}
 	spin_unlock_irqrestore(&ld->rxlock, rxflags);
 
+	/* no need to wait pkts in tx_rq finish to free all skb,
+	 * because higmac_xmit_release_skb is in the tx_lock,
+	 */
 	spin_lock_irqsave(&ld->txlock, txflags);
-	for (i = 0; i < ld->tx_bq.count; i++) {
-		skb = ld->tx_bq.skb[i];
-		if (skb) {
-			dev_kfree_skb_any(skb);
-			ld->tx_bq.skb[i] = NULL;
-			ld->tx_rq.use_cnt++;
-			/* TODO: unmap the skb */
-		}
-	}
 	/* tx_rq: logic write */
 	wr_offset = readl(ld->gmac_iobase + TX_RQ_WR_ADDR);
+	offset[ld->index][TX_RQ_WR] = wr_offset;
 	/* tx_rq: software read */
 	rd_offset = readl(ld->gmac_iobase + TX_RQ_RD_ADDR);
 	/* FIXME: stop to reclaim tx skb */
 	writel(wr_offset, ld->gmac_iobase + TX_RQ_RD_ADDR);
+	offset[ld->index][TX_RQ_RD] = wr_offset;
 
 	/* tx_bq: logic read */
 	rd_offset = readl(ld->gmac_iobase + TX_BQ_RD_ADDR);
+	offset[ld->index][TX_BQ_RD] = rd_offset;
 	if (!rd_offset)
 		rd_offset = (HIGMAC_HWQ_TX_BQ_DEPTH - 1) << 5;
 	else
 		rd_offset -= DESC_SIZE;
 	/* FIXME: stop software tx skb */
 	writel(rd_offset, ld->gmac_iobase + TX_BQ_WR_ADDR);
+	offset[ld->index][TX_BQ_WR] = rd_offset;
 
-	/* DEBUG code */
-	ld->tx_bq.use_cnt = 0;
-	ld->tx_rq.use_cnt = 0;
+	for (i = 0; i < ld->tx_bq.count; i++) {
+		if (!ld->tx_bq.skb[i])
+			ld->tx_bq.skb[i] = SKB_MAGIC;
+	}
 	spin_unlock_irqrestore(&ld->txlock, txflags);
 }
 
@@ -412,10 +485,64 @@ static void higmac_set_multicast_list(struct net_device *dev);
 void higmac_restart(struct higmac_netdev_local *ld)
 {
 	unsigned long rxflags, txflags;
+	struct sk_buff *skb = NULL;
+	int i;
+
+	/* sanity check */
+#define TEST(Q) \
+	do {\
+		if (offset[ld->index][Q] != higmac_readl(Q##_ADDR)) {\
+			pr_info("offset[%d][%s]=%x != hw_offset=%x\n",\
+					ld->index, #Q, offset[ld->index][Q],\
+					higmac_readl(Q##_ADDR));\
+		} \
+	} while (0);\
+
+/* these check are meaningless after doing a poweron reset
+	TEST(RX_FQ_RD);
+	TEST(RX_FQ_WR);
+	TEST(RX_BQ_RD);
+	TEST(RX_BQ_WR);
+	TEST(TX_BQ_RD);
+	TEST(TX_BQ_WR);
+	TEST(TX_RQ_RD);
+	TEST(TX_RQ_WR);
+*/
 	/* restart hw engine now */
 	spin_lock_irqsave(&ld->rxlock, rxflags);
 	spin_lock_irqsave(&ld->txlock, txflags);
 	higmac_hw_mac_core_reset(ld);
+
+	for (i = 0; i < ld->rx_fq.count; i++) {
+		skb = ld->rx_fq.skb[i];
+		if (skb) {
+			ld->rx_fq.skb[i] = NULL;
+			if (skb == SKB_MAGIC)
+				continue;
+			dev_kfree_skb_any(skb);
+			ld->rx_bq.use_cnt++;
+			/* TODO: need to unmap the skb here
+			 * but there is no way to get the dma_addr here,
+			 * and unmap(TO_DEVICE) ops do nothing in fact,
+			 * so we ignore to call
+			 * dma_unmap_single(dev, dma_addr, skb->len,
+			 *	DMA_TO_DEVICE)
+			 */
+		}
+	}
+
+	for (i = 0; i < ld->tx_bq.count; i++) {
+		skb = ld->tx_bq.skb[i];
+		if (skb) {
+			ld->tx_bq.skb[i] = NULL;
+			if (skb == SKB_MAGIC)
+				continue;
+			dev_kfree_skb_any(skb);
+			ld->tx_rq.use_cnt++;
+			/* TODO: unmap the skb */
+		}
+	}
+
 	pmt_reg_restore(ld);
 	/* fwd will not reset with the gmac, so no need to reconfig it */
 	higmac_hw_mac_core_init(ld);
@@ -471,13 +598,12 @@ static void higmac_adjust_link(struct net_device *dev)
 			higmac_set_macif(ld, port_mode, speed_mode);
 
 			/* phy half duplex: for collision detect and retransmission */
-			if (ld->phy->duplex == DUPLEX_HALF) {
+			if (ld->phy->duplex == DUPLEX_HALF)
 				writel(DUPLEX_HALF, ld->gmac_iobase + MAC_DUPLEX_HALF_CTRL);
-			} else if (ld->phy->duplex == DUPLEX_FULL) {
+			else if (ld->phy->duplex == DUPLEX_FULL)
 				writel(DUPLEX_FULL, ld->gmac_iobase + MAC_DUPLEX_HALF_CTRL);
-			} else {
+			else
 				pr_err("unknown, phy link duplex!\n");
-			}
 
 			/* netif_wake_queue(dev);*/
 		} else {
@@ -485,100 +611,10 @@ static void higmac_adjust_link(struct net_device *dev)
 		}
 
 		/* TODO: what'll happened when linkup twice */
-		init_autoeee(ld, stat);
+		if (enable_autoeee)
+			init_autoeee(ld, stat);
 		ld->link_stat = stat;
 	}
-}
-
-static int higmac_init_skb_buffers(struct higmac_netdev_local *ld)
-{
-	int i;
-	struct sk_buff *skb;
-
-	for (i = 0; i < MAX_RX_POOLS; i++) {
-		skb = dev_alloc_skb(SKB_SIZE);
-		if (!skb)
-			break;
-
-		ld->rx_pool.sk_pool[i] = skb;
-	}
-
-	if (i < MAX_RX_POOLS) {
-		for (i--; i > 0; i--)
-			dev_kfree_skb_any(ld->rx_pool.sk_pool[i]);
-
-		return -ENOMEM;
-	}
-
-	ld->rx_pool.next_free_skb = 0;
-	ld->rx_pool.rx_pool_dry_times = 0;
-
-	return 0;
-}
-
-static void higmac_destroy_skb_buffers(struct higmac_netdev_local *ld)
-{
-	int i;
-
-	for (i = 0; i < MAX_RX_POOLS; i++)
-		dev_kfree_skb_any(ld->rx_pool.sk_pool[i]);
-
-	ld->rx_pool.next_free_skb = 0;
-	ld->rx_pool.rx_pool_dry_times = 0;
-}
-
-/* caller must hold the rxlock */
-struct sk_buff *higmac_dev_alloc_skb(struct higmac_netdev_local *ld)
-{
-	struct sk_buff *skb;
-	struct skb_shared_info *shinfo;
-	int i;
-
-	for (i = 0; i < MAX_RX_POOLS; i++) {
-		skb = ld->rx_pool.sk_pool[ld->rx_pool.next_free_skb++];
-		if (ld->rx_pool.next_free_skb == MAX_RX_POOLS)
-			ld->rx_pool.next_free_skb = 0;
-
-		if (!skb_shared(skb) &&
-				atomic_read(&(skb_shinfo(skb)->dataref)) <= 1)
-			break;
-	}
-
-	if (i == MAX_RX_POOLS) {
-		ld->rx_pool.rx_pool_dry_times++;
-
-		return NULL;
-	}
-
-	memset(skb, 0, offsetof(struct sk_buff, tail));
-
-	skb->data = skb->tail = skb->head;
-
-	/* following code deleted, because skb->end is never changed
-	 * when receive packet. And its caculate method is wrong,
-	 * skb->end should be this:
-	 * skb->end = skb->data + (skb->truesize
-	 *		-SKB_DATA_ALIGN(sizeof(struct sk_buff))
-	 *		-SKB_DATA_ALIGN(sizeof(struct skb_shared_info))) */
-
-	/* skb->end = skb->data + (skb->truesize - sizeof(struct sk_buff)); */
-	skb->len = 0;
-	skb->data_len = 0;
-	skb->cloned = 0;
-
-	atomic_inc(&skb->users);
-
-	/* following code fix the skb release bug
-	 * when transplant from linux2.6.35 or 3.0.8 to linux3.4.5 */
-
-	/* make sure we initialize shinfo sequentially */
-	shinfo = skb_shinfo(skb);
-	memset(shinfo, 0, offsetof(struct skb_shared_info, dataref));
-	atomic_set(&shinfo->dataref, 1);
-
-	skb_reserve(skb, NET_SKB_PAD);
-
-	return skb;
 }
 
 static void higmac_destroy_hw_desc_queue(struct higmac_netdev_local *ld)
@@ -666,17 +702,16 @@ static void higmac_bfproc_recv(unsigned long data)
 	int ret = 0;
 	int start, end;
 
+	spin_lock_irqsave(&ld->txlock, flags);
+	higmac_xmit_release_skb(ld);
+	spin_unlock_irqrestore(&ld->txlock, flags);
+
 	spin_lock_irqsave(&ld->rxlock, flags);
-
-	rx_bq_wr_offset = higmac_readl_bits(ld, RX_BQ_WR_ADDR,
-			BITS_RX_BQ_WR_ADDR);/* logic write pointer */
-	rx_bq_rd_offset = higmac_readl_bits(ld, RX_BQ_RD_ADDR,
-			BITS_RX_BQ_RD_ADDR);/* software read pointer */
-
-	higmac_trace(5, "rx_bq_wr_offset is %x, rx_bq_rd_offset is %x\n",
-			rx_bq_wr_offset, rx_bq_rd_offset);
+	rx_bq_wr_offset = higmac_readl(RX_BQ_WR_ADDR);/* logic write pointer */
+	rx_bq_rd_offset = higmac_readl(RX_BQ_RD_ADDR);/* software read pointer */
 
 	start = rx_bq_rd_offset >> 5;
+
 	while (rx_bq_wr_offset != rx_bq_rd_offset) {
 		int pos = rx_bq_rd_offset >> 5;
 
@@ -706,6 +741,8 @@ static void higmac_bfproc_recv(unsigned long data)
 		if (unlikely(skb != ld->rx_fq.skb[pos])) {
 			pr_err("desc->skb(0x%p) != rx_fq.skb[%d](0x%p)!\n",
 					skb, pos, ld->rx_fq.skb[pos]);
+			if (ld->rx_fq.skb[pos] == SKB_MAGIC)
+				goto next;
 			BUG_ON(1);
 		} else
 			ld->rx_fq.skb[pos] = NULL;
@@ -729,7 +766,7 @@ static void higmac_bfproc_recv(unsigned long data)
 			pr_err("rcv pkt len error, len = %d\n", skb->len);
 			dev->stats.rx_errors++;
 			dev->stats.rx_length_errors++;
-			dev_kfree_skb_any(skb);/* in fact reuse this skb */
+			dev_kfree_skb_any(skb);
 			goto next;
 		}
 
@@ -748,36 +785,35 @@ next:
 		if (rx_bq_rd_offset >= (HIGMAC_HWQ_RX_BQ_DEPTH << 5))
 			rx_bq_rd_offset = 0;
 
-		higmac_writel_bits(ld, rx_bq_rd_offset, RX_BQ_RD_ADDR,
-				BITS_RX_BQ_RD_ADDR);
+		higmac_writel(rx_bq_rd_offset, RX_BQ_RD_ADDR);
 	}
 	end = rx_bq_rd_offset >> 5;
 	if (debug(HW_RX_DESC))
 		pr_info("gmac%d reclaim skb[%d-%d)\n", ld->index, start, end);
+
 	higmac_feed_hw(ld);
 	spin_unlock_irqrestore(&ld->rxlock, flags);
-
-	spin_lock_irqsave(&ld->txlock, flags);
-	higmac_xmit_release_skb(ld);
-	spin_unlock_irqrestore(&ld->txlock, flags);
 }
 
 static irqreturn_t hieth_net_isr(int irq, void *dev_id)
-{/* TODO: remove debug code */
+{
+	/* TODO: remove debug code */
 	struct higmac_netdev_local *ld = get_netdev_local((int)dev_id);
 	int ints;
 
-	higmac_irq_disable(ld, RX_BQ_IN_INT | RX_BQ_IN_TIMEOUT_INT);
+	higmac_irq_disable(ld);
 
 	ints = higmac_read_irqstatus(ld);
 
 	if (debug(HW_IRQ))
 		pr_info("gmac%d irq status=0x%x\n", ld->index, ints);
 
-	if (likely(ints & (RX_BQ_IN_INT | RX_BQ_IN_TIMEOUT_INT))) {
+	if (likely(ints & (RX_BQ_IN_INT | RX_BQ_IN_TIMEOUT_INT |
+			TX_RQ_IN_INT | TX_RQ_IN_TIMEOUT_INT))) {
 		tasklet_schedule(&ld->bf_recv);
 		higmac_clear_irqstatus(ld, ints);
-		ints &= ~(RX_BQ_IN_INT | RX_BQ_IN_TIMEOUT_INT);
+		ints &= ~(RX_BQ_IN_INT | RX_BQ_IN_TIMEOUT_INT
+				| TX_RQ_IN_INT | TX_RQ_IN_TIMEOUT_INT);
 	}
 
 	if (unlikely(ints)) {
@@ -785,7 +821,7 @@ static irqreturn_t hieth_net_isr(int irq, void *dev_id)
 		higmac_clear_irqstatus(ld, ints);
 	}
 
-	higmac_irq_enable(ld, RX_BQ_IN_INT | RX_BQ_IN_TIMEOUT_INT);
+	higmac_irq_enable(ld);
 
 #if	0	/* debug_pmt and eee */
 	ints = readl(ld->gmac_iobase + 0xa00);
@@ -819,12 +855,9 @@ static void higmac_monitor_func(unsigned long arg)
 	higmac_feed_hw(ld);
 	spin_unlock_irqrestore(&ld->rxlock, flags);
 
-	spin_lock_irqsave(&ld->txlock, flags);
-	higmac_xmit_release_skb(ld);
-	spin_unlock_irqrestore(&ld->txlock, flags);
-
 	if (netif_queue_stopped(dev)) {
 		int tx_bq_wr_offset, tx_bq_rd_offset;
+
 		/* software write pointer */
 		tx_bq_wr_offset = readl(ld->gmac_iobase + TX_BQ_WR_ADDR);
 		/* logic read pointer */
@@ -844,11 +877,14 @@ static int higmac_net_open(struct net_device *dev)
 	struct higmac_netdev_local *ld = netdev_priv(dev);
 	unsigned long flags;
 
+	ld->link_stat = DEFAULT_LINK_STAT;
+	phy_start(ld->phy);
+
 	netif_carrier_off(dev);
 
 	higmac_hw_desc_enable(ld);
 	higmac_port_enable(ld);
-	higmac_irq_enable(ld, RX_BQ_IN_INT | RX_BQ_IN_TIMEOUT_INT);
+	higmac_irq_enable(ld);
 
 	spin_lock_irqsave(&ld->rxlock, flags);
 	higmac_feed_hw(ld);
@@ -859,9 +895,6 @@ static int higmac_net_open(struct net_device *dev)
 
 	netif_start_queue(dev);
 
-	ld->link_stat = DEFAULT_LINK_STAT;
-	phy_start(ld->phy);
-
 	return 0;
 }
 
@@ -869,7 +902,7 @@ static int higmac_net_close(struct net_device *dev)
 {
 	struct higmac_netdev_local *ld = netdev_priv(dev);
 
-	higmac_irq_disable(ld, RX_BQ_IN_INT | RX_BQ_IN_TIMEOUT_INT);
+	higmac_irq_disable(ld);
 	higmac_hw_desc_disable(ld);
 
 	netif_carrier_off(dev);
@@ -892,10 +925,7 @@ static int higmac_net_hard_start_xmit(struct sk_buff *skb,
 		struct net_device *dev)
 {
 	struct higmac_netdev_local *ld = netdev_priv(dev);
-	unsigned long flags;
 	int ret;
-
-	spin_lock_irqsave(&ld->txlock, flags);
 
 	ret = higmac_xmit_real_send(ld, skb);
 	if (ret) {
@@ -911,12 +941,9 @@ static int higmac_net_hard_start_xmit(struct sk_buff *skb,
 	dev->stats.tx_packets++;
 	dev->stats.tx_bytes += skb->len;
 
-	higmac_xmit_release_skb(ld);
 	ret = NETDEV_TX_OK;
 
 out:
-	spin_unlock_irqrestore(&ld->txlock, flags);
-
 	return ret;
 }
 
@@ -1038,7 +1065,9 @@ static int higmac_mdio_register(void)
 	int ret;
 
 	ld[0] = get_netdev_local(0);/* gmac0 */
+#if (CONFIG_GMAC_NUMS > 1)
 	ld[1] = get_netdev_local(1);/* gmac1 */
+#endif
 
 	/* register mdio0 and mdio1 */
 	ret = higmac_mdiobus_driver_init(ld[0], mdio_bus[0]);
@@ -1046,19 +1075,23 @@ static int higmac_mdio_register(void)
 		pr_err("register mdio bus%d failed!\n", ld[0]->index);
 		return ret;
 	}
+
+#if (CONFIG_GMAC_NUMS > 1)
 	ret = higmac_mdiobus_driver_init(ld[1], mdio_bus[1]);
 	if (ret) {
 		pr_err("register mdio bus%d failed!\n", ld[1]->index);
 		higmac_mdiobus_driver_exit(ld[0]);
 		return ret;
 	}
+#endif
 
 	/* gmac0 may use gmac1's mdio and vice versa */
 	if (strcmp(higmac_board_info[0].mii_name, mdio_bus[0]))
 		ld[0]->mii_bus_using = ld[1]->mii_bus_registered;
-
+#if (CONFIG_GMAC_NUMS > 1)
 	if (strcmp(higmac_board_info[1].mii_name, mdio_bus[1]))
 		ld[1]->mii_bus_using = ld[0]->mii_bus_registered;
+#endif
 
 	return 0;
 }
@@ -1082,23 +1115,10 @@ static int __devinit higmac_dev_probe(struct platform_device *platdev)
 	struct resource *iores;
 	int ret = -1, i;
 
+	get_board_info();
 	/* 1) init glb adapter */
 	adapter = kzalloc(sizeof(struct higmac_adapter), GFP_KERNEL);
-	if (adapter == NULL) {
-		pr_err("alloc higmac_adapter failed!\n");
-		ret = -ENOMEM;
-		goto _error_alloc_adapter;
-	}
-	/* TODO: move these iobase def to Kconfig */
-	adapter->sysctl_iobase = (void __iomem *)
-					IO_ADDRESS(HIGMAC_SYSCTL_IOBASE);
-	adapter->fwdctl_iobase = ioremap(HIGMAC_FWD_IOBASE, FWD_IO_SIZE);
-	if (!adapter->fwdctl_iobase) {
-		pr_err("ioremap fwdctl err: base=0x%.8x, size=0x%.8x\n",
-				HIGMAC_FWD_IOBASE, FWD_IO_SIZE);
-		ret = -EFAULT;
-		goto _error_ioremap_fwdctl;
-	}
+	BUG_ON(!adapter);
 
 	spin_lock_init(&adapter->lock);
 
@@ -1149,7 +1169,8 @@ static int __devinit higmac_dev_probe(struct platform_device *platdev)
 		 * bootloadr may set the mac addr already,
 		 * grab the MAC from the board somehow
 		 */
-		memcpy(netdev[i]->dev_addr, higmac_board_info[i].macaddr.sa_data, netdev[i]->addr_len);
+		memcpy(netdev[i]->dev_addr, higmac_board_info[i].macaddr.sa_data,
+		       netdev[i]->addr_len);
 
 		/* init tasklet */
 		ld->bf_recv.next = NULL;
@@ -1176,10 +1197,10 @@ static int __devinit higmac_dev_probe(struct platform_device *platdev)
 		higmac_hw_mac_core_init(ld);
 	}
 
-#ifndef CONFIG_S40_FPGA
-	/* internal FE_PHY: enable clk and reset  */
+	/* phy reset */
+	higmac_hw_phy_gpio_reset();
 	higmac_hw_internal_fephy_reset(adapter);
-#endif
+	higmac_hw_external_phy_reset();
 
 	adapter->debug_level = DEBUG_DEFAULT;
 	adapter->work_mode = STANDALONE;
@@ -1191,15 +1212,6 @@ static int __devinit higmac_dev_probe(struct platform_device *platdev)
 			random_ether_addr(netdev[i]->dev_addr);
 
 		higmac_hw_set_mac_addr(ld, netdev[i]->dev_addr);
-	}
-
-	/* 5) skb pool */
-	for_each_gmac_netdev_local_priv(ld, i) {
-		ret = higmac_init_skb_buffers(ld);
-		if (ret) {
-			pr_err("init skb pool failed!\n");
-			goto _error_skb_buff;
-		}
 	}
 
 	/* 6) init hw desc queue */
@@ -1215,6 +1227,8 @@ static int __devinit higmac_dev_probe(struct platform_device *platdev)
 		goto _error_mdio_register;
 
 	/* 8) connect phy */
+	phy_register_fixups();
+
 	for_each_gmac_netdev_local_priv(ld, i) {
 		snprintf(ld->phy_name, MII_BUS_ID_SIZE, PHY_ID_FMT,
 				higmac_board_info[i].mii_name,
@@ -1224,26 +1238,43 @@ static int __devinit higmac_dev_probe(struct platform_device *platdev)
 				higmac_adjust_link, 0,
 				higmac_board_info[i].phy_intf);
 		if (IS_ERR(phydev)) {
-			pr_err("connect to phy_dev %s failed!", ld->phy_name);
-			goto _error_phy_connect;
+			pr_warn("connect to phy_dev %s failed!", ld->phy_name);
+			continue;
 		}
-		/* TODO: force to use 10/100 in fpga board */
-#ifdef CONFIG_S40_FPGA
-		phydev->advertising &= ~(ADVERTISED_1000baseT_Full
-				| ADVERTISED_1000baseT_Half);
-#endif
+		/* If the phy_id is mostly Fs, there is no device there */
+		if ((phydev->phy_id & 0x1fffffff) == 0x1fffffff
+				|| phydev->phy_id == 0) {
+			pr_info("PHY %s not found\n", ld->phy_name);
+			continue;
+		}
+
+		/* Stop Advertising 1000BASE Capability if interface is not RGMII */
+		if ((higmac_board_info[i].phy_intf == PHY_INTERFACE_MODE_MII) ||
+			(higmac_board_info[i].phy_intf == PHY_INTERFACE_MODE_RMII)) {
+			phydev->advertising &= ~(SUPPORTED_1000baseT_Half |
+					SUPPORTED_1000baseT_Full);
+
+			/*
+			 * Internal FE phy's reg BMSR bit8 is wrong, make the kernel
+			 * believe it has the 1000base Capability, so fix it here
+			 */
+			if (phydev->phy_id == HISILICON_PHY_ID_FESTAV200)
+				phydev->supported &= ~(ADVERTISED_1000baseT_Full |
+						ADVERTISED_1000baseT_Half);
+		}
+
 		ld->phy = phydev;
 
-#ifndef CONFIG_S40_FPGA
-		higmac_internal_fephy_performance_fix(ld);
-#endif
-
 		/* TODO: code reconstruct */
-		init_autoeee(ld, 0);
+		if (enable_autoeee)
+			init_autoeee(ld, 0);
 	}
 
 	/* 9) request irq */
 	for_each_gmac_netdev_local_priv(ld, i) {
+		if (!ld->phy)
+			continue;
+
 		ret = request_irq(netdev[i]->irq, hieth_net_isr, 0,
 				higmac_board_info[ld->index].gmac_name,
 				(void *)ld->index);
@@ -1254,8 +1285,11 @@ static int __devinit higmac_dev_probe(struct platform_device *platdev)
 	}
 
 	/* 10) register netdevice */
-	for (i = 0; i < CONFIG_GMAC_NUMS; i++) {
-		ret = register_netdev(netdev[i]);
+	for_each_gmac_netdev_local_priv(ld, i) {
+		if (!ld->phy)
+			continue;
+
+		ret = register_netdev(ld->netdev);
 		if (ret) {
 			pr_err("register_netdev[%d] failed!", i);
 			goto _error_register_netdev;
@@ -1265,17 +1299,21 @@ static int __devinit higmac_dev_probe(struct platform_device *platdev)
 	return ret;
 
 _error_register_netdev:
-	for (i--; i >= 0; i--)
-		unregister_netdev(netdev[i]);
+	for_each_gmac_netdev_local_priv(ld, i) {
+		if (!ld->phy)
+			continue;
+
+		unregister_netdev(ld->netdev);
+	}
 
 _error_request_irq:
-	for_each_gmac_netdev_local_priv(ld, i)
-		free_irq(netdev[i]->irq, (void *)ld->index);
+	for_each_gmac_netdev_local_priv(ld, i) {
+		if (!ld->phy)
+			continue;
 
-_error_phy_connect:
-	for_each_gmac_netdev_local_priv(ld, i)
-		if (ld->phy)
-			phy_disconnect(ld->phy);
+		free_irq(netdev[i]->irq, (void *)ld->index);
+		phy_disconnect(ld->phy);
+	}
 
 _error_mdio_register:
 	higmac_mdio_unregister();
@@ -1283,10 +1321,6 @@ _error_mdio_register:
 _error_hw_desc_queue:
 	for_each_gmac_netdev_local_priv(ld, i)
 		higmac_destroy_hw_desc_queue(ld);
-
-_error_skb_buff:
-	for_each_gmac_netdev_local_priv(ld, i)
-		higmac_destroy_skb_buffers(ld);
 
 _error_alloc_netdev:
 	for (i = 0; i < CONFIG_GMAC_NUMS; i++) {
@@ -1300,12 +1334,7 @@ _error_alloc_netdev:
 		}
 	}
 
-	iounmap(adapter->fwdctl_iobase);
-
-_error_ioremap_fwdctl:
 	kfree(adapter);
-
-_error_alloc_adapter:
 
 	return ret;
 }
@@ -1325,15 +1354,13 @@ static int __devexit higmac_dev_remove(struct platform_device *pdev)
 
 		del_timer_sync(&ld->monitor);
 
-		free_irq(netdev->irq, (void *)ld->index);
-
-		unregister_netdev(netdev);
-
-		if (ld->phy)
+		if (ld->phy) {
+			free_irq(netdev->irq, (void *)ld->index);
+			unregister_netdev(netdev);
 			phy_disconnect(ld->phy);
+		}
 
 		higmac_reclaim_rx_tx_resource(ld);
-		higmac_destroy_skb_buffers(ld);
 		higmac_mdiobus_driver_exit(ld);
 		higmac_destroy_hw_desc_queue(ld);
 
@@ -1343,9 +1370,6 @@ static int __devexit higmac_dev_remove(struct platform_device *pdev)
 		free_netdev(netdev);
 		higmac_board_info[i].netdev = NULL;
 	}
-
-	if (adapter->fwdctl_iobase)
-		iounmap(adapter->fwdctl_iobase);
 
 	kfree(adapter);
 
@@ -1369,9 +1393,8 @@ static int higmac_dev_suspend(struct platform_device *dev, pm_message_t state)
 {
 	struct higmac_adapter *adapter = get_adapter();
 	struct higmac_netdev_local *ld;
-	struct net_device *netdev;
 	int mode = adapter->work_mode;
-	int i, val;
+	int i, val, power_off = true;
 
 	if (suspend_state == RESUME)
 		suspend_state = SUSPEND;
@@ -1380,29 +1403,32 @@ static int higmac_dev_suspend(struct platform_device *dev, pm_message_t state)
 		return 0;
 	}
 
-	for_each_gmac_netdev(netdev, i) {
-		ld = netdev_priv(netdev);
+	for_each_gmac_netdev_local_priv(ld, i) {
+		if (!ld->phy)
+			continue;
 		/* suspend -> linkup
 		 * we stop tx_queue in suspend and reclaim resource,
 		 * but phy_adjust_link will resume the queue occasionally
 		 * it will print tx_queue is full
 		 */
+		higmac_irq_disable(ld);
+		higmac_hw_desc_disable(ld);/* stop rx/tx */
 		phy_disconnect(ld->phy);
 
 		/* del_timer_sync shoule be excuted before netif_device_detach
 		 * because timer monitor may wake up
 		 * the stopped queue occasionally */
 		del_timer_sync(&ld->monitor);
-		netif_device_detach(netdev);
+		netif_device_detach(ld->netdev);
 
-		higmac_irq_disable(ld, RX_BQ_IN_INT | RX_BQ_IN_TIMEOUT_INT);
-		higmac_hw_desc_disable(ld);
-
-		netif_carrier_off(netdev);
+		netif_carrier_off(ld->netdev);
 		higmac_reclaim_rx_tx_resource(ld);
 	}
 	if (need_forcing_fwd()) {
 		for_each_gmac_netdev_local_priv(ld, i) {
+			if (!ld->phy)
+				continue;
+
 			/* set gmac in promisc mode.received all pkgs. */
 			val = readl(ld->gmac_iobase + REC_FILT_CONTROL);
 			val &= ~(BIT_BC_DROP_EN | BIT_MC_MATCH_EN |
@@ -1410,12 +1436,30 @@ static int higmac_dev_suspend(struct platform_device *dev, pm_message_t state)
 			writel(val, ld->gmac_iobase + REC_FILT_CONTROL);
 		}
 		mode = MODE3;
+		power_off = false;
 	}
 
 	fwd_suspend(adapter, mode);
 
-	for_each_gmac_netdev_local_priv(ld, i)
-		pmt_enter(ld);
+	for_each_gmac_netdev_local_priv(ld, i) {
+		if (!ld->phy)
+			continue;
+
+		if (pmt_enter(ld))
+			power_off = false;
+	}
+
+	if (power_off) {/* if no forcing_fwd and WOL, then poweroff */
+		pr_info("power off gmac.\n");
+		for_each_gmac_netdev_local_priv(ld, i) {
+			if (!ld->phy)
+				continue;
+			/* no need to call genphy_resume() in resume,
+			 * because we reset everything */
+			genphy_suspend(ld->phy);/* power down phy */
+		}
+		higmac_hw_all_clk_disable();
+	}
 
 	return 0;
 }
@@ -1424,7 +1468,6 @@ static int higmac_dev_resume(struct platform_device *dev)
 {
 	struct higmac_netdev_local *ld;
 	struct higmac_adapter *adapter = get_adapter();
-	struct net_device *netdev;
 	int i;
 
 	if (suspend_state == SUSPEND)
@@ -1434,33 +1477,34 @@ static int higmac_dev_resume(struct platform_device *dev)
 		return 0;
 	}
 
-#ifndef CONFIG_S40_FPGA
 	/* internal FE_PHY: enable clk and reset  */
 	higmac_hw_internal_fephy_reset(adapter);
-#endif
+	higmac_hw_external_phy_reset();
 
 	fwd_resume(adapter);
 	/* power on gmac */
-	for_each_gmac_netdev(netdev, i) {
-		ld = netdev_priv(netdev);
-		/* TODO: why we need this phy code? */
-		phy_connect_direct(netdev, ld->phy, higmac_adjust_link, 0,
+	for_each_gmac_netdev_local_priv(ld, i) {
+		if (!ld->phy)
+			continue;
+
+		/* TODO: why we need this phy code? phy_fix execute here */
+		phy_connect_direct(ld->netdev, ld->phy, higmac_adjust_link, 0,
 				higmac_board_info[i].phy_intf);
 		higmac_restart(ld);
 		ld->monitor.expires = jiffies + HIGMAC_MONITOR_TIMER;
 		mod_timer(&ld->monitor, ld->monitor.expires);
 		ld->link_stat = DEFAULT_LINK_STAT;
-		higmac_irq_enable(ld, RX_BQ_IN_INT | RX_BQ_IN_TIMEOUT_INT);
-		netif_device_attach(netdev);
+		higmac_irq_enable(ld);
+		netif_device_attach(ld->netdev);
 		phy_start(ld->phy);
-
-#ifndef CONFIG_S40_FPGA
-		higmac_internal_fephy_performance_fix(ld);
-#endif
 	}
 
-	for_each_gmac_netdev_local_priv(ld, i)
+	for_each_gmac_netdev_local_priv(ld, i) {
+		if (!ld->phy)
+			continue;
+
 		pmt_exit(ld);
+	}
 
 	return 0;
 }
