@@ -9,7 +9,8 @@
 #define HINFC610_GENH
 /******************************************************************************/
 
-#include "../hinfc_gen.h"
+#include <hinfc_gen.h>
+#include "hinfc610.h"
 
 enum hinfc610_ecc_reg {
 	hinfc610_ecc_none   = 0x00,
@@ -34,13 +35,13 @@ enum hinfc610_page_reg {
 	hinfc610_pagesize_32K   = 0x05,
 };
 
-enum hinfc610_page_reg hinfc610_page_type2reg(int type);
+int hinfc610_get_pagesize(struct hinfc_host *host);
 
-int hinfc610_page_reg2type(enum hinfc610_page_reg reg);
+void hinfc610_set_pagesize(struct hinfc_host *host, int pagesize);
 
-enum hinfc610_ecc_reg hinfc610_ecc_type2reg(int type);
+int hinfc610_get_ecctype(struct hinfc_host *host);
 
-int hinfc610_ecc_reg2type(enum hinfc610_ecc_reg reg);
+void hinfc610_set_ecctype(struct hinfc_host *host, int ecctype);
 
 /******************************************************************************/
 #endif /* HINFC610_GENH */

@@ -1,17 +1,25 @@
 #include <linux/platform_device.h>
-#include <asm/pmu.h>
 #include <mach/irqs.h>
-static struct resource  A9_pmu_resource = {
-	.start = INTNR_A9_PMU_INT,
-	.end   = INTNR_A9_PMU_INT,
-	.flags = IORESOURCE_IRQ,
+
+static struct resource pmu_resource[] = {
+	[0] = {
+		.start = INTNR_A9_PMU_INT0,
+		.end   = INTNR_A9_PMU_INT0,
+		.flags = IORESOURCE_IRQ,
+	},
+
+	[1] = {
+		.start = INTNR_A9_PMU_INT1,
+		.end   = INTNR_A9_PMU_INT1,
+		.flags = IORESOURCE_IRQ,
+	}
 };
 
 static struct platform_device A9_pmu_device = {
 	.name = "arm-pmu",
-	.id   = ARM_PMU_DEVICE_CPU,
-	.resource = &A9_pmu_resource,
-	.num_resources = 1,
+	.id   = -1,
+	.resource = pmu_resource,
+	.num_resources = ARRAY_SIZE(pmu_resource),
 };
 
 static int __init pmu_init(void)

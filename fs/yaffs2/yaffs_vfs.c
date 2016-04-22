@@ -2665,7 +2665,7 @@ static struct super_block *yaffs_internal_read_super(int yaffs_version,
 
 	/* Get the device */
 	mtd = get_mtd_device(NULL, MINOR(sb->s_dev));
-	if (!mtd) {
+	if (IS_ERR_OR_NULL(mtd)) {
 		yaffs_trace(YAFFS_TRACE_ALWAYS,
 			"yaffs: MTD device %u either not valid or unavailable",
 			MINOR(sb->s_dev));
@@ -3064,64 +3064,6 @@ static char *yaffs_dump_dev_part1(char *buf, struct yaffs_dev *dev)
 	return buf;
 }
 
-static int yaffs_proc_read(char *page,
-			   char **start,
-			   off_t offset, int count, int *eof, void *data)
-{
-	struct list_head *item;
-	char *buf = page;
-	int step = offset;
-	int n = 0;
-
-	/* Get proc_file_read() to step 'offset' by one on each sucessive call.
-	 * We use 'offset' (*ppos) to indicate where we are in dev_list.
-	 * This also assumes the user has posted a read buffer large
-	 * enough to hold the complete output; but that's life in /proc.
-	 */
-
-	*(int *)start = 1;
-
-	/* Print header first */
-	if (step == 0)
-		buf +=
-		    sprintf(buf,
-			    "Multi-version YAFFS built:" __DATE__ " " __TIME__
-			    "\n");
-	else if (step == 1)
-		buf += sprintf(buf, "\n");
-	else {
-		step -= 2;
-
-		mutex_lock(&yaffs_context_lock);
-
-		/* Locate and print the Nth entry.  Order N-squared but N is small. */
-		list_for_each(item, &yaffs_context_list) {
-			struct yaffs_linux_context *dc =
-			    list_entry(item, struct yaffs_linux_context,
-				       context_list);
-			struct yaffs_dev *dev = dc->dev;
-
-			if (n < (step & ~1)) {
-				n += 2;
-				continue;
-			}
-			if ((step & 1) == 0) {
-				buf +=
-				    sprintf(buf, "\nDevice %d \"%s\"\n", n,
-					    dev->param.name);
-				buf = yaffs_dump_dev_part0(buf, dev);
-			} else {
-				buf = yaffs_dump_dev_part1(buf, dev);
-                        }
-
-			break;
-		}
-		mutex_unlock(&yaffs_context_lock);
-	}
-
-	return buf - page < count ? buf - page : count;
-}
-
 /**
  * Set the verbosity of the warnings and error messages.
  *
@@ -3278,6 +3220,63 @@ static struct file_system_to_install fs_to_install[] = {
 	{NULL, 0}
 };
 
+static ssize_t yaffs_proc_read(struct file *filp, char __user *buffer,
+			       size_t count, loff_t *ppos)
+{
+	char *data;
+	char *ptr;
+	int index = 0;
+	int next = *ppos;
+	struct list_head *item;
+
+	ptr = data = vmalloc(count);
+	if (!data)
+		return -ENOMEM;
+
+	if (*ppos == 0)
+		ptr += sprintf(ptr, "Multi-version YAFFS built:" __DATE__ " " __TIME__ "\n");
+
+	mutex_lock(&yaffs_context_lock);
+
+	list_for_each(item, &yaffs_context_list) {
+		struct yaffs_linux_context *dc =
+			list_entry(item, struct yaffs_linux_context,
+			context_list);
+		struct yaffs_dev *dev = dc->dev;
+
+		if (index < next) {
+			index++;
+			continue;
+		}
+
+		if (count < 1600)
+			break;
+		count -= 1600;
+
+		ptr += sprintf(ptr, "\n\nDevice %d \"%s\"\n",
+			       next, dev->param.name);
+		ptr = yaffs_dump_dev_part0(ptr, dev);
+		ptr = yaffs_dump_dev_part1(ptr, dev);
+		next++;
+		index++;
+	}
+	mutex_unlock(&yaffs_context_lock);
+
+	if (copy_to_user(buffer, data, ptr - data))
+		return -EFAULT;
+
+	vfree(data);
+
+	*ppos = next;
+
+	return ptr - data;
+}
+
+static const struct file_operations yaffs_proc_fops = {
+	.read		= yaffs_proc_read,
+	.write		= yaffs_proc_write,
+};
+
 static int __init init_yaffs_fs(void)
 {
 	int error = 0;
@@ -3288,17 +3287,22 @@ static int __init init_yaffs_fs(void)
 
 	mutex_init(&yaffs_context_lock);
 
-	/* Install the proc_fs entries */
-	my_proc_entry = create_proc_entry("yaffs",
-					  S_IRUGO | S_IFREG, YPROC_ROOT);
-
-	if (my_proc_entry) {
-		my_proc_entry->write_proc = yaffs_proc_write;
-		my_proc_entry->read_proc = yaffs_proc_read;
-		my_proc_entry->data = NULL;
-	} else {
+	my_proc_entry = proc_create_data("yaffs", S_IRUGO | S_IFREG, YPROC_ROOT,
+					 &yaffs_proc_fops, 0);
+	if (!my_proc_entry)
 		return -ENOMEM;
-        }
+
+	/* Install the proc_fs entries */
+//	my_proc_entry = create_proc_entry("yaffs",
+//					  S_IRUGO | S_IFREG, YPROC_ROOT);
+
+//	if (my_proc_entry) {
+//		my_proc_entry->write_proc = yaffs_proc_write;
+//		my_proc_entry->read_proc = yaffs_proc_read;
+//		my_proc_entry->data = NULL;
+//	} else {
+//		return -ENOMEM;
+//	}
 
 	/* Now add the file system entries */
 

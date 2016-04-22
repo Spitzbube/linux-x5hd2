@@ -1,3 +1,4 @@
+ccflags-y += -Idrivers/mtd/nand
 
 obj-$(CONFIG_MTD_NAND_HINFC504) += hinfc504.o hinfc504_os.o hinfc504_gen.o hinfc504_dbg_inf.o \
 	hinfc504_read_retry_hynix_bg_cdie.o \

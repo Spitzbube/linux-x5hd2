@@ -17,6 +17,7 @@
 #include <linux/module.h>
 #include <asm/atomic.h>
 #include <asm/setup.h>
+#include <linux/tags.h>
 
 #include "hieth.h"
 #include "mdio.h"
@@ -24,6 +25,8 @@
 #include "ctrl.h"
 #include "glb.h"
 #include "sys.h"
+#include "phy_fix.h"
+#include "sockioctl.h"
 
 extern struct hieth_mdio_local hieth_mdio_local_device;
 
@@ -38,8 +41,32 @@ static struct sockaddr macaddr;
  * Phy address preference the uboot config
  * If uboot not config phy address, then used the kernel config value.
  */
-static int hisf_phy_addr_up = CONFIG_HIETH_PHYID_U;
-static int hisf_phy_addr_down = CONFIG_HIETH_PHYID_D;
+#ifdef CONFIG_HIETH_PHYID_U
+int hisf_phy_addr_up   = CONFIG_HIETH_PHYID_U;
+#else 
+int hisf_phy_addr_up;
+#endif
+#ifdef CONFIG_HIETH_PHYID_D
+int hisf_phy_addr_down = CONFIG_HIETH_PHYID_D;
+#else
+int hisf_phy_addr_down;
+#endif
+phy_interface_t hisf_phy_intf_up   = PHY_INTERFACE_MODE_NA;
+phy_interface_t hisf_phy_intf_down = PHY_INTERFACE_MODE_NA;
+
+
+struct hisf_gpio  hisf_gpio_up={0,0};
+struct hisf_gpio  hisf_gpio_down={0,0};
+
+/* default, eth enable */
+static bool eth_disable = false; 
+static int __init noeth(char *str)
+{
+	eth_disable = true;
+
+	return 0;
+}
+early_param("noeth", noeth);
 
 static int __init hieth_mac_parse_tag(const struct tag *tag)
 {
@@ -61,6 +88,8 @@ static int __init hieth_phy_addr_parse_tag(const struct tag *tag)
 
 __tagtable((CONFIG_HIETH_TAG + 1), hieth_phy_addr_parse_tag);
 
+#include "pm.c"
+
 static void hieth_adjust_link(struct net_device *dev)
 {
 	int stat = 0;
@@ -75,6 +104,83 @@ static void hieth_adjust_link(struct net_device *dev)
 		phy_print_status(ld->phy);
 		ld->link_stat = stat;
 	}
+}
+
+static int hieth_init_skb_buffers(struct hieth_netdev_local* ld)
+{
+	int i;
+	struct sk_buff* skb;
+
+	for (i = 0; i < CONFIG_HIETH_MAX_RX_POOLS; i++){
+		skb = dev_alloc_skb(SKB_SIZE);
+		if (!skb)
+			break;
+		ld->rx_pool.sk_pool[i] = skb;
+	}
+
+	if (i < CONFIG_HIETH_MAX_RX_POOLS){
+		hieth_error("no mem");
+		for (i--; i > 0; i--)
+			dev_kfree_skb_any(ld->rx_pool.sk_pool[i]);
+		return -ENOMEM;
+	}
+
+	ld->rx_pool.next_free_skb = 0;
+	ld->stat.rx_pool_dry_times = 0;
+	return 0;
+}
+
+static void hieth_destroy_skb_buffers(struct hieth_netdev_local* ld)
+{
+	int i;
+	for (i = 0; i < CONFIG_HIETH_MAX_RX_POOLS; i++)
+		dev_kfree_skb_any(ld->rx_pool.sk_pool[i]);
+
+	ld->rx_pool.next_free_skb = 0;
+	ld->stat.rx_pool_dry_times = 0;
+}
+
+struct sk_buff *hieth_platdev_alloc_skb(struct hieth_netdev_local *ld)
+{
+	struct sk_buff *skb;
+	int i;
+
+	skb = ld->rx_pool.sk_pool[ld->rx_pool.next_free_skb++];
+
+	if (ld->rx_pool.next_free_skb == CONFIG_HIETH_MAX_RX_POOLS)
+		ld->rx_pool.next_free_skb = 0;
+
+	/*current skb is used by kernel or other process,find another skb*/
+	if( skb_shared(skb) || (atomic_read(&(skb_shinfo(skb)->dataref)) > 1) ) {
+
+		for (i = 0; i < CONFIG_HIETH_MAX_RX_POOLS; i++){
+
+			skb = ld->rx_pool.sk_pool[ld->rx_pool.next_free_skb++];
+			if (ld->rx_pool.next_free_skb == CONFIG_HIETH_MAX_RX_POOLS)
+				ld->rx_pool.next_free_skb = 0;
+
+			if ((skb_shared(skb) == 0) && (atomic_read(&(skb_shinfo(skb)->dataref)) <= 1))
+				break;
+		}
+
+		if (i == CONFIG_HIETH_MAX_RX_POOLS){
+			ld->stat.rx_pool_dry_times ++;
+			hieth_trace(7, "%ld: no free skb\n", ld->stat.rx_pool_dry_times);
+			skb = dev_alloc_skb(SKB_SIZE);
+			return skb;
+		}
+	}
+	memset(skb, 0, offsetof(struct sk_buff, tail));
+
+	skb->tail = skb->data = skb->head;
+	skb->end = skb->tail + SKB_DATA_ALIGN(SKB_SIZE + NET_SKB_PAD);
+	
+	skb_reserve(skb, NET_SKB_PAD);	
+	skb->len = 0;
+	skb->data_len = 0;
+	skb->cloned = 0;
+	atomic_inc(&skb->users);
+	return skb;
 }
 
 static void hieth_bfproc_recv(unsigned long data)
@@ -142,7 +248,9 @@ static irqreturn_t hieth_net_isr(int irq, void *dev_id)
 	}
 
 	/*mask the all interrupt */
+	local_lock(ld); /* Add lock for multi-processor */
 	hieth_writel_bits(ld, 0, GLB_RW_IRQ_ENA, BITS_IRQS_ENA_ALLPORT);
+	local_unlock(ld);
 
 	ints = hieth_read_irqstatus(ld);
 
@@ -166,7 +274,9 @@ static irqreturn_t hieth_net_isr(int irq, void *dev_id)
 	}
 
 	/*unmask the all interrupt */
+	local_lock(ld);
 	hieth_writel_bits(ld, 1, GLB_RW_IRQ_ENA, BITS_IRQS_ENA_ALLPORT);
+	local_unlock(ld);
 
 	return IRQ_HANDLED;
 }
@@ -341,14 +451,25 @@ static int hieth_net_ioctl(struct net_device *net_dev,
 			   struct ifreq *ifreq, int cmd)
 {
 	struct hieth_netdev_local *ld = netdev_priv(net_dev);
+	struct pm_config pm_config;
 
-	if (!netif_running(net_dev))
-		return -EINVAL;
+	switch (cmd) {
+	case SIOCSETPM:
+		if (copy_from_user(&pm_config, ifreq->ifr_data, sizeof(pm_config)))
+			return -EFAULT;
+		return pmt_config(&pm_config);	
+		
+	default:
+		if (!netif_running(net_dev))
+			return -EINVAL;
 
-	if (!ld->phy)
-		return -EINVAL;
+		if (!ld->phy)
+			return -EINVAL;
 
-	return phy_mii_ioctl(ld->phy, ifreq, cmd);
+		return phy_mii_ioctl(ld->phy, ifreq, cmd);
+	}
+	
+	return 0;
 }
 
 static void hieth_ethtools_get_drvinfo(struct net_device *net_dev,
@@ -441,7 +562,7 @@ static int hieth_platdev_probe_port(struct platform_device *pdev, int port)
 
 	local_lock_init(ld);
 
-	ld->iobase = (unsigned long)ioremap_nocache(CONFIG_HIETH_IOBASE,
+	ld->iobase = (void __iomem *)ioremap_nocache(CONFIG_HIETH_IOBASE,
 						    CONFIG_HIETH_IOSIZE);
 	if (!ld->iobase) {
 		hieth_error("ioremap_nocache err, base=0x%.8x, size=0x%.8x\n",
@@ -455,6 +576,13 @@ static int hieth_platdev_probe_port(struct platform_device *pdev, int port)
 
 	ld->dev = &(pdev->dev);
 
+	/* wol need */
+	device_set_wakeup_capable(ld->dev, 1);
+	/* TODO: when we can let phy powerdown?
+	 * In forcing fwd mode, we don't want phy powerdown,
+	 * so I set wakeup enable all the time */
+	device_set_wakeup_enable(ld->dev, 1);
+
 	/* reset and init port */
 	hieth_port_reset(ld, ld->port);
 	hieth_port_init(ld, ld->port);
@@ -467,11 +595,16 @@ static int hieth_platdev_probe_port(struct platform_device *pdev, int port)
 	snprintf(ld->phy_name, MII_BUS_ID_SIZE, PHY_ID_FMT,
 		 HIETH_MIIBUS_NAME, phy_addr);
 
-	ld->phy = phy_connect(netdev, ld->phy_name, hieth_adjust_link, 0,
+#if defined(CONFIG_HIETH_MII_RMII_MODE_U) || defined(CONFIG_HIETH_MII_RMII_MODE_D)
+	ld->phy = phy_connect(netdev, ld->phy_name, hieth_adjust_link,
 			      UD_BIT_NAME(CONFIG_HIETH_MII_RMII_MODE) ?
 			      PHY_INTERFACE_MODE_MII : PHY_INTERFACE_MODE_MII);
+#else
+	ld->phy = phy_connect(netdev, ld->phy_name, hieth_adjust_link,
+			  (ld->port == UP_PORT? hisf_phy_intf_up : hisf_phy_intf_down));
+#endif
 	if (IS_ERR(ld->phy)) {
-		hieth_error("connect to phy_device %s failed!", ld->phy_name);
+		hieth_trace(7, "connect to phy_device %s failed!", ld->phy_name);
 		ld->phy = NULL;
 		goto _error_phy_connect;
 	}
@@ -484,6 +617,12 @@ static int hieth_platdev_probe_port(struct platform_device *pdev, int port)
 	skb_queue_head_init(&ld->tx_hw);
 	ld->tx_hw_cnt = 0;
 
+	ret = hieth_init_skb_buffers(ld);
+	if(ret){
+		hieth_error("hieth_init_skb_buffers failed!");
+		goto _error_init_skb_buffers;
+	}
+
 	ret = register_netdev(netdev);
 	if (ret) {
 		hieth_error("register_netdev %s failed!", netdev->name);
@@ -493,6 +632,9 @@ static int hieth_platdev_probe_port(struct platform_device *pdev, int port)
 	return ret;
 
 _error_register_netdev:
+	hieth_destroy_skb_buffers(ld);
+
+_error_init_skb_buffers:
 	phy_disconnect(ld->phy);
 	ld->phy = NULL;
 
@@ -523,6 +665,7 @@ static int hieth_platdev_remove_port(struct platform_device *pdev, int port)
 	ld = netdev_priv(ndev);
 
 	unregister_netdev(ndev);
+	hieth_destroy_skb_buffers(ld);
 
 	phy_disconnect(ld->phy);
 	ld->phy = NULL;
@@ -568,6 +711,109 @@ static void phy_quirk(struct hieth_mdio_local *mdio, int phyaddr)
 	}
 }
 
+static void string_to_mac(unsigned char *mac, char* s)
+{
+	int i;
+	char *e;
+
+	for (i = 0; i < 6; ++i) {
+		mac[i] = s ? simple_strtoul(s, &e, 16) : 0;
+		if (s)
+			s = (*e) ? (e + 1) : e;
+	}
+}
+
+void hieth_get_boardinfo(void)
+{
+	char str[20] = {0};
+	int len = 0;
+	char *p = NULL;
+	char *index = NULL;
+
+	memset(str, 0 , sizeof(str));
+	len = get_param_data("ethaddr", str, sizeof(str));
+	if ( len > 0) {
+		memset(macaddr.sa_data, 0 , sizeof(macaddr.sa_data));
+		string_to_mac(macaddr.sa_data, str);
+	}
+
+	memset(str, 0 , sizeof(str));
+	len = get_param_data("phyaddr", str, sizeof(str));
+	if ( len > 0) {
+		p = str; 
+		index = strchr(p, ',');
+		if (index) {
+			*index = '\0';
+		}
+		hisf_phy_addr_up = simple_strtoul(p, NULL, 10);
+		hieth_trace(7, "UP PHY Addr %d\n", hisf_phy_addr_up);
+		if (!index)
+			goto get_phyio;
+
+		index++;
+		p = index;
+		index = strchr(p, ',');
+		if (index) {
+			*index = '\0';
+		}
+		hisf_phy_addr_down = simple_strtoul(p, NULL, 10);
+		hieth_trace(7, "DOWN PHY Addr %d\n", hisf_phy_addr_up);
+	}
+
+get_phyio:
+	memset(str, 0, sizeof(str));
+	len = get_param_data("phyio0", str, sizeof(str));
+	if (len > 0) {
+		memcpy(&hisf_gpio_up.gpio_base, str, sizeof(u32));
+		memcpy(&hisf_gpio_up.gpio_bit, str+sizeof(u32), sizeof(u32));
+		hieth_trace(7, "phy0: gpiobase=0x%x, gpio_bit=%x\n",
+				(unsigned int)hisf_gpio_up.gpio_base,
+				hisf_gpio_up.gpio_bit);
+	}
+
+	memset(str, 0, sizeof(str));
+	len = get_param_data("phyio1", str, sizeof(str));
+	if (len > 0) {
+		memcpy(&hisf_gpio_down.gpio_base, str, sizeof(u32));
+		memcpy(&hisf_gpio_down.gpio_bit, str+sizeof(u32), sizeof(u32));
+		hieth_trace(7,  "phy0: gpiobase=0x%x, gpio_bit=%x\n",
+				(unsigned int)hisf_gpio_down.gpio_base,
+				hisf_gpio_down.gpio_bit);
+	}
+
+	memset(str, 0, sizeof(str));
+	len = get_param_data("phyintf", str, sizeof(str));
+	if (len > 0) {
+		p = str;
+		index = strchr(p, ',');
+		if (index) {
+			*index = '\0';
+		}
+
+		if (!strncmp(p, "mii", strlen(p) + 1)) 
+			hisf_phy_intf_up = PHY_INTERFACE_MODE_MII;
+		else if (!strncmp(p, "rmii", strlen(p)))
+			hisf_phy_intf_up = PHY_INTERFACE_MODE_RMII;
+		if (!index)
+			goto out;
+
+		index++;
+		p = index;		
+		index = strchr(p, ',');
+		if (index) {
+			*index = '\0';
+		}
+
+		if (!strncmp(p, "mii", strlen(p)  + 1)) 
+			hisf_phy_intf_down = PHY_INTERFACE_MODE_MII;
+		else if (!strncmp(p, "rmii", strlen(p)))
+			hisf_phy_intf_down = PHY_INTERFACE_MODE_RMII;	
+	}
+
+out:
+	return;
+}
+
 static int hieth_plat_driver_probe(struct platform_device *pdev)
 {
 	int ret = -1;
@@ -575,6 +821,7 @@ static int hieth_plat_driver_probe(struct platform_device *pdev)
 
 	memset(hieth_devs_save, 0, sizeof(hieth_devs_save));
 
+	hieth_get_boardinfo();
 	hieth_sys_init();
 
 	if (hieth_mdiobus_driver_init(pdev)) {
@@ -582,6 +829,9 @@ static int hieth_plat_driver_probe(struct platform_device *pdev)
 		ret = -ENODEV;
 		goto _error_mdiobus_driver_init;
 	}
+
+	/* phy param */
+	phy_register_fixups();
 
 	hieth_platdev_probe_port(pdev, UP_PORT);
 	hieth_platdev_probe_port(pdev, DOWN_PORT);
@@ -663,13 +913,32 @@ static int hieth_plat_driver_suspend_port(struct platform_device *pdev,
 	return 0;
 }
 
-static int hieth_plat_driver_suspend(struct platform_device *pdev,
+int hieth_plat_driver_suspend(struct platform_device *pdev,
 				     pm_message_t state)
 {
+	bool power_off = true;
+	struct hieth_netdev_local *ld;
+
 	hieth_plat_driver_suspend_port(pdev, state, UP_PORT);
 	hieth_plat_driver_suspend_port(pdev, state, DOWN_PORT);
 
-	hieth_sys_suspend();
+	if (pmt_enter())
+		power_off = false;
+
+	if (power_off) {
+		if (hieth_devs_save[UP_PORT]) {
+			ld = netdev_priv(hieth_devs_save[UP_PORT]);
+			genphy_suspend(ld->phy);/* power down phy */
+		}
+		
+		if (hieth_devs_save[DOWN_PORT]) {
+			ld = netdev_priv(hieth_devs_save[UP_PORT]);
+			genphy_suspend(ld->phy);/* power down phy */
+		}
+
+		msleep(5); /* need some time before phy suspend finished. */
+		hieth_sys_suspend();
+	}
 
 	return 0;
 }
@@ -696,7 +965,7 @@ static int hieth_plat_driver_resume_port(struct platform_device *pdev, int port)
 	return 0;
 }
 
-static int hieth_plat_driver_resume(struct platform_device *pdev)
+int hieth_plat_driver_resume(struct platform_device *pdev)
 {
 	hieth_sys_resume();
 
@@ -706,12 +975,16 @@ static int hieth_plat_driver_resume(struct platform_device *pdev)
 	hieth_plat_driver_resume_port(pdev, UP_PORT);
 	hieth_plat_driver_resume_port(pdev, DOWN_PORT);
 
+	pmt_exit();
 	return 0;
 }
 #else
 #  define hieth_plat_driver_suspend	NULL
 #  define hieth_plat_driver_resume	NULL
 #endif
+
+EXPORT_SYMBOL(hieth_plat_driver_suspend);
+EXPORT_SYMBOL(hieth_plat_driver_resume);
 
 static struct platform_driver hieth_platform_driver = {
 	.probe = hieth_plat_driver_probe,
@@ -759,6 +1032,9 @@ static int hieth_init(void)
 {
 	int ret = 0;
 
+	if (eth_disable)
+		return 0;
+
 	ret = platform_device_register(&hieth_platform_device);
 	if (ret) {
 		hieth_error("register platform device failed!");
@@ -783,6 +1059,9 @@ _error_register_device:
 
 static void hieth_exit(void)
 {
+	if (eth_disable)
+		return;
+
 	platform_driver_unregister(&hieth_platform_driver);
 
 	platform_device_unregister(&hieth_platform_device);

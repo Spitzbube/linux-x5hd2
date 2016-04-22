@@ -35,7 +35,7 @@ static int spi_general_wait_ready(struct hisfc_spi *spi)
 
 	} while (!time_after_eq(jiffies, deadline));
 
-	printk(KERN_ERR "Wait spi flash ready timeout.\n");
+	pr_err("Wait spi flash ready timeout.\n");
 
 	return 1;
 }

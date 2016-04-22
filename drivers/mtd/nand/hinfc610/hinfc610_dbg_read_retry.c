@@ -6,14 +6,9 @@
  *
 ******************************************************************************/
 
-#include <linux/moduleparam.h>
 #include <linux/vmalloc.h>
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/slab.h>
 #include <linux/debugfs.h>
 #include <asm/uaccess.h>
-#include <linux/mutex.h>
 
 #include "hinfc610_os.h"
 #include "hinfc610.h"
@@ -90,7 +85,6 @@ static ssize_t dbgfs_read_retry_read(struct file *filp, char __user *buffer,
 	struct hinfc610_dbg_read_retry_item_t *item;
 
 	if (*ppos == 0) {
-
 		if (dbg_read_retry->count
 		    < CONFIG_HINFC610_DBG_READ_RETRY_NUM)
 			dbg_read_retry->read_index = 0;
@@ -99,7 +93,7 @@ static ssize_t dbgfs_read_retry_read(struct file *filp, char __user *buffer,
 				= (dbg_read_retry->index + 1);
 
 		len = snprintf(buf, sizeof(buf),
-			"Print parameter: \"offset=%d length=%d\"\n",
+			"Print parameter: \"offset=%d length=%d\" (offset is page number)\n",
 			dbg_read_retry->offset,
 			dbg_read_retry->length);
 
@@ -113,7 +107,7 @@ static ssize_t dbgfs_read_retry_read(struct file *filp, char __user *buffer,
 
 		ptr = buf;
 		ptr += sprintf(ptr, "Read retry: ");
-		for (ix = 0; ix < dbg_read_retry->max_retry; ix++)
+		for (ix = 1; ix <= dbg_read_retry->max_retry; ix++)
 			ptr += sprintf(ptr, "%d, ", dbg_read_retry->retry[ix]);
 		ptr += sprintf(ptr, "\n");
 
@@ -207,7 +201,7 @@ static ssize_t dbgfs_read_retry_write(struct file *filp,
 
 			pos += sizeof(CMD_WORD_OFFSET) - 1;
 			str = (char *)(buf + pos);
-			value = simple_strtoul(str, &str, 10);
+			value = simple_strtoul(str, &str, 0);
 
 			if (value < 0)
 				value = 0;
@@ -225,7 +219,7 @@ static ssize_t dbgfs_read_retry_write(struct file *filp,
 
 			pos += sizeof(CMD_WORD_LENGTH) - 1;
 			str = (char *)(buf + pos);
-			value = simple_strtoul(str, &str, 10);
+			value = simple_strtoul(str, &str, 0);
 
 			if (value < 0)
 				value = dbg_read_retry->pagecount;
@@ -268,14 +262,13 @@ static int dbgfs_read_retry_init(struct dentry *root, struct hinfc_host *host)
 		return 0;
 
 	if (!host->read_retry) {
-		printk(KERN_WARNING
-		       "read_retry: The NAND not support this interface.\n");
+		pr_err("The NAND not support this interface.\n");
 		return -1;
 	}
 
 	read_retry = vmalloc(sizeof(struct hinfc610_dbg_read_retry_t));
 	if (!read_retry) {
-		PR_ERR("Can't allocate memory.\n");
+		pr_err("Can't allocate memory.\n");
 		return -ENOMEM;
 	}
 	memset(read_retry, 0, sizeof(struct hinfc610_dbg_read_retry_t));
@@ -288,7 +281,7 @@ static int dbgfs_read_retry_init(struct dentry *root, struct hinfc_host *host)
 
 	if (read_retry->max_retry > 16) {
 		vfree(read_retry);
-		PR_ERR("Bug, max_retry too small.\n");
+		pr_err("Bug, max_retry too small.\n");
 		return -EFAULT;
 	}
 
@@ -296,7 +289,7 @@ static int dbgfs_read_retry_init(struct dentry *root, struct hinfc_host *host)
 		S_IFREG | S_IRUSR | S_IWUSR, 
 		root, NULL, &dbgfs_read_retry_fops);
 	if (!read_retry->dentry) {
-		PR_ERR("Can't create 'read_retry' file.\n");
+		pr_err("Can't create 'read_retry' file.\n");
 		vfree(read_retry);
 		return -ENOENT;
 	}
@@ -344,14 +337,15 @@ static void hinfc610_dbg_read_retry_rr(struct hinfc_host *host, int index)
 	item = &dbg_read_retry->item[dbg_read_retry->index];
 
 	dbg_read_retry->count++;
-	dbg_read_retry->retry[index]++;
 
 	do_gettime(&item->hour, &item->min, &item->sec, &item->msec);
 
 	item->page = page;
 	item->retry = index;
 
-	item->ecc_err = GET_UC_ECC(host) ? 1 : 0;
+	item->ecc_err = IS_PS_UN_ECC(host) ? 1 : 0;
+	if (!item->ecc_err)
+		dbg_read_retry->retry[index]++;
 
 	if (++dbg_read_retry->index >= CONFIG_HINFC610_DBG_READ_RETRY_NUM)
 		dbg_read_retry->index = 0;

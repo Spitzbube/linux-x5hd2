@@ -3,33 +3,30 @@
 #include <linux/io.h>
 #include <mach/platform.h>
 
-#define AMBA_UART_DR    (CONFIG_DEFAULT_UART_BASE_ADDR + 0x0)
-#define AMBA_UART_LCRH  (CONFIG_DEFAULT_UART_BASE_ADDR + 0x2c)
-#define AMBA_UART_CR    (CONFIG_DEFAULT_UART_BASE_ADDR + 0x30)
-#define AMBA_UART_FR    (CONFIG_DEFAULT_UART_BASE_ADDR + 0x18)
+#define AMBA_UART_DR   \
+	(*(volatile unsigned char *)(CONFIG_DEFAULT_UART_BASE_ADDR + 0x0))
+#define AMBA_UART_LCRH \
+	(*(volatile unsigned char *)(CONFIG_DEFAULT_UART_BASE_ADDR + 0x2c))
+#define AMBA_UART_CR   \
+	(*(volatile unsigned char *)(CONFIG_DEFAULT_UART_BASE_ADDR + 0x30))
+#define AMBA_UART_FR   \
+	(*(volatile unsigned char *)(CONFIG_DEFAULT_UART_BASE_ADDR + 0x18))
 
 /*
  * This does not append a newline
  */
 static inline void putc(int c)
 {
-	unsigned int val;
-	val = __raw_readl(AMBA_UART_FR);
-	while (val & (1 << 5)) {
-		val = __raw_readl(AMBA_UART_FR);
+	while (AMBA_UART_FR & (1 << 5))
 		barrier();
-	}
-	__raw_writel(c, AMBA_UART_DR);
+
+	AMBA_UART_DR = c;
 }
 
 static inline void flush(void)
 {
-	unsigned int val;
-	val = __raw_readl(AMBA_UART_FR);
-	while (val & (1 << 3)) {
-		val = __raw_readl(AMBA_UART_FR);
+	while (AMBA_UART_FR & (1 << 3))
 		barrier();
-	}
 }
 
 /*

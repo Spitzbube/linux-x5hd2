@@ -19,6 +19,7 @@ static char hynix_bg_bdie_rr_org[4] = {0};
 static int hinfc504_hynix_bg_bdie_set_rr_reg(struct hinfc_host *host, int index)
 {
 	int ix;
+	int regval;
 	char HYNIX_BG_BDIE_RR_REG[4] = {0xA7,  0xAD,  0xAE,  0xAF};
 	char value_offset[7][4] = {
 		{0x00,  0x00,  0x00,  0x00},
@@ -30,6 +31,9 @@ static int hinfc504_hynix_bg_bdie_set_rr_reg(struct hinfc_host *host, int index)
 		{0x7F,  0x7F, -0x20, -0x25}
 	};
 	char *value = &value_offset[index][0];
+
+	regval = hinfc_read(host, HINFC504_PWIDTH);
+	hinfc_write(host, 0xFFF, HINFC504_PWIDTH);
 
 	host->enable_ecc_randomizer(host, DISABLE, DISABLE);
 	hinfc_write(host, 1, HINFC504_DATA_NUM);
@@ -74,15 +78,16 @@ static int hinfc504_hynix_bg_bdie_set_rr_reg(struct hinfc_host *host, int index)
 	}
 
 	hinfc_write(host, 0x16, HINFC504_CMD);
-	hinfc_write(host, HINFC504_WRITE_2CMD_0ADD_NODATA, HINFC504_OP);
+	hinfc_write(host, HINFC504_WRITE_1CMD_0ADD_NODATA, HINFC504_OP);
 	WAIT_CONTROLLER_FINISH();
 
 	host->enable_ecc_randomizer(host, ENABLE, ENABLE);
+	hinfc_write(host, regval, HINFC504_PWIDTH);
 
 	return 0;
 }
-
 /*****************************************************************************/
+
 static int hinfc504_hynix_bg_bdie_set_rr_param(struct hinfc_host *host, int param)
 {
 	if (!param)

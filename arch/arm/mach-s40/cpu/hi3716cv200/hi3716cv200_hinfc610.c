@@ -11,14 +11,12 @@
 #include <linux/kernel.h>
 #include <asm/mach/resource.h>
 #include <mach/clock.h>
-#include <mach/io.h>
-#include <asm/io.h>
 #include <asm/setup.h>
-#include <mach/platform.h>
+#include <mach/hardware.h>
 
 /*****************************************************************************/
 
-#define HI3716CV200_HINFC610_PERI_CRG_REG_BASE  IO_ADDRESS(REG_BASE_CRG)
+#define HI3716CV200_HINFC610_PERI_CRG_REG_BASE  __io_address(REG_BASE_CRG)
 #define HI3716CV200_PERI_CRG24                  (HI3716CV200_HINFC610_PERI_CRG_REG_BASE + 0x60)
 #define HI3716CV200_PERI_CRG24_CLK_EN           (0x1U << 0)
 #define HI3716CV200_PERI_CRG24_CLK_SEL_MASK     (0x7U << 8)

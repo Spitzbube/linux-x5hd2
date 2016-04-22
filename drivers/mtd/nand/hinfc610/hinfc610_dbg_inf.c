@@ -6,11 +6,6 @@
  *
 ******************************************************************************/
 
-#include <linux/moduleparam.h>
-#include <linux/vmalloc.h>
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/slab.h>
 #include <linux/debugfs.h>
 #include <asm/uaccess.h>
 

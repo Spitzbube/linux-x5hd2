@@ -7,10 +7,8 @@ menuconfig MTD_NAND_HINFC610
 	tristate "Hisilicon NAND Controller v610 device Support"
 	depends on MTD_NAND
 	default y if (ARCH_S40) || (ARCH_GODBOX)
-	select YAFFS_FS
 	select MISC_FILESYSTEMS
 	select MTD_BLOCK
-	select YAFFS_YAFFS2
 	help
 	  Hisilicon NAND Controller v610 device Support
 

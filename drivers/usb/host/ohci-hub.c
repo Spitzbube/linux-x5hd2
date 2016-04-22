@@ -42,6 +42,9 @@
 static void dl_done_list (struct ohci_hcd *);
 static void finish_unlinks (struct ohci_hcd *, u16);
 
+extern void set_usbhost_connect(int index, int online);
+
+
 #ifdef	CONFIG_PM
 static int ohci_rh_suspend (struct ohci_hcd *ohci, int autostop)
 __releases(ohci->lock)
@@ -316,48 +319,6 @@ static int ohci_bus_resume (struct usb_hcd *hcd)
 	return rc;
 }
 
-/* Carry out the final steps of resuming the controller device */
-static void ohci_finish_controller_resume(struct usb_hcd *hcd)
-{
-	struct ohci_hcd		*ohci = hcd_to_ohci(hcd);
-	int			port;
-	bool			need_reinit = false;
-
-	/* See if the controller is already running or has been reset */
-	ohci->hc_control = ohci_readl(ohci, &ohci->regs->control);
-	if (ohci->hc_control & (OHCI_CTRL_IR | OHCI_SCHED_ENABLES)) {
-		need_reinit = true;
-	} else {
-		switch (ohci->hc_control & OHCI_CTRL_HCFS) {
-		case OHCI_USB_OPER:
-		case OHCI_USB_RESET:
-			need_reinit = true;
-		}
-	}
-
-	/* If needed, reinitialize and suspend the root hub */
-	if (need_reinit) {
-		spin_lock_irq(&ohci->lock);
-		ohci_rh_resume(ohci);
-		ohci_rh_suspend(ohci, 0);
-		spin_unlock_irq(&ohci->lock);
-	}
-
-	/* Normally just turn on port power and enable interrupts */
-	else {
-		ohci_dbg(ohci, "powerup ports\n");
-		for (port = 0; port < ohci->num_ports; port++)
-			ohci_writel(ohci, RH_PS_PPS,
-					&ohci->regs->roothub.portstatus[port]);
-
-		ohci_writel(ohci, OHCI_INTR_MIE, &ohci->regs->intrenable);
-		ohci_readl(ohci, &ohci->regs->intrenable);
-		msleep(20);
-	}
-
-	usb_hcd_resume_root_hub(hcd);
-}
-
 /* Carry out polling-, autostop-, and autoresume-related state changes */
 static int ohci_root_hub_state_changes(struct ohci_hcd *ohci, int changed,
 		int any_connected, int rhsc_status)
@@ -520,6 +481,8 @@ ohci_hub_status_data (struct usb_hcd *hcd, char *buf)
 	/* look at each port */
 	for (i = 0; i < ohci->num_ports; i++) {
 		u32	status = roothub_portstatus (ohci, i);
+		
+		set_usbhost_connect(i, status & RH_PS_CCS);
 
 		/* can't autostop if ports are connected */
 		any_connected |= (status & RH_PS_CCS);
@@ -622,14 +585,8 @@ static int ohci_start_port_reset (struct usb_hcd *hcd, unsigned port)
 
 /* See usb 7.1.7.5:  root hubs must issue at least 50 msec reset signaling,
  * not necessarily continuous ... to guard against resume signaling.
- * The short timeout is safe for non-root hubs, and is backward-compatible
- * with earlier Linux hosts.
  */
-#ifdef	CONFIG_USB_SUSPEND
 #define	PORT_RESET_MSEC		50
-#else
-#define	PORT_RESET_MSEC		10
-#endif
 
 /* this timer value might be vendor-specific ... */
 #define	PORT_RESET_HW_MSEC	10
@@ -771,6 +728,7 @@ static int ohci_hub_control (
 			goto error;
 		wIndex--;
 		temp = roothub_portstatus (ohci, wIndex);
+		set_usbhost_connect(wIndex, temp & RH_PS_CCS);
 		put_unaligned_le32(temp, buf);
 
 #ifndef	OHCI_VERBOSE_DEBUG

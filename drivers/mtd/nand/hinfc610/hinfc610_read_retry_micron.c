@@ -16,21 +16,39 @@
 
 static int hinfc610_micron_set_rr_reg(struct hinfc_host *host, int rr)
 {
-#define MICRON_SET_RR          0xEF
+	int regval;
+	int reg_pwidth;
+
+	reg_pwidth = hinfc_read(host, HINFC610_PWIDTH);
+	hinfc_write(host, 0xFFF, HINFC610_PWIDTH);
+
+	host->enable_ecc_randomizer(host, DISABLE, DISABLE);
+
 	hinfc_write(host, 1, HINFC610_DATA_NUM);
 
 	writel(rr, host->chip->IO_ADDR_W);
 	hinfc_write(host, MICRON_RR_ADDR, HINFC610_ADDRL);
-	hinfc_write(host, MICRON_SET_RR, HINFC610_CMD);
-	hinfc_write(host, HINFC610_WRITE_1CMD_1ADD_DATA, HINFC610_OP);
+	/* set read retry */
+	hinfc_write(host, 0xEF, HINFC610_CMD);
+
+	/* need to config WAIT_READY_EN, here config WAIT_READY_EN bit. */
+	regval = (HINFC610_IS_SYNC(host) ? 
+		HINFC610_WRITE_1CMD_1ADD_DATA_SYNC_WAIT_READY :
+		HINFC610_WRITE_1CMD_1ADD_DATA_WAIT_READY);
+
+	hinfc_write(host, regval, HINFC610_OP);
+
 	WAIT_CONTROLLER_FINISH();
-#undef MICRON_SET_RR
+
+	host->enable_ecc_randomizer(host, ENABLE, ENABLE);
+	hinfc_write(host, reg_pwidth, HINFC610_PWIDTH);
+
 	return 0;
 }
 /*****************************************************************************/
 
 #if 0
-static int hinfc610_micron_get_rr(struct hinfc_host *host)
+static int hinfc610_micron_get_rr_param(struct hinfc_host *host)
 {
 #define MICRON_GET_RR          0xEE
 	hinfc_write(host, 1, HINFC610_DATA_NUM);
@@ -50,8 +68,7 @@ static int hinfc610_micron_get_rr(struct hinfc_host *host)
 
 static int hinfc610_micron_set_rr_param(struct hinfc_host *host, int rr_option)
 {
-	hinfc610_micron_set_rr_reg(host, rr_option);
-	return 0;
+	return hinfc610_micron_set_rr_reg(host, rr_option);
 }
 /*****************************************************************************/
 

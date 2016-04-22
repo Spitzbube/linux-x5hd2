@@ -6,14 +6,9 @@
  *
 ******************************************************************************/
 
-#include <linux/moduleparam.h>
 #include <linux/vmalloc.h>
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/slab.h>
 #include <linux/debugfs.h>
 #include <asm/uaccess.h>
-#include <linux/mutex.h>
 
 #include "hinfc610_os.h"
 #include "hinfc610.h"
@@ -51,7 +46,7 @@ static int dbgfs_erase_count_read(struct file *filp, char __user *buffer,
 		dbg_erase_count->index = dbg_erase_count->offset;
 
 		len = snprintf(buf, sizeof(buf),
-			"Print parameter: \"offset=%d length=%d\"\n",
+			"Print parameter: \"offset=%d length=%d\" (offset is block number)\n",
 			dbg_erase_count->offset,
 			dbg_erase_count->length);
 
@@ -230,7 +225,7 @@ static int dbgfs_erase_count_init(struct dentry *root, struct hinfc_host *host)
 
 	erase_count = vmalloc(size);
 	if (!erase_count) {
-		PR_ERR("Can't allocate memory.\n");
+		pr_err("Can't allocate memory.\n");
 		return -ENOMEM;
 	}
 	memset(erase_count, 0, size);
@@ -243,7 +238,7 @@ static int dbgfs_erase_count_init(struct dentry *root, struct hinfc_host *host)
 		S_IFREG | S_IRUSR | S_IWUSR, 
 		root, NULL, &dbgfs_erase_count_fops);
 	if (!erase_count->dentry) {
-		PR_ERR("Can't create 'erase_count' file.\n");
+		pr_err("Can't create 'erase_count' file.\n");
 		vfree(erase_count);
 		return -ENOENT;
 	}
@@ -284,7 +279,7 @@ static void dbg_erase_count_erase(struct hinfc_host *host)
 	block_index = (host->addr_value[0] / dbg_erase_count->page_per_block);
 
 	if (block_index > dbg_erase_count->blocknum) {
-		PR_ERR("Block out of range.\n");
+		pr_err("Block out of range.\n");
 		return;
 	}
 

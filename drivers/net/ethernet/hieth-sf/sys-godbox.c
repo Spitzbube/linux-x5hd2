@@ -61,7 +61,12 @@ static inline void hieth_clk_dis(void)
 	local_irq_restore(flags);
 }
 
-static void hieth_phy_reset(void)
+static void hieth_internal_phy_reset(void)
+{
+	/* godbox not support internal phy */
+}
+
+static void hieth_external_phy_reset(void)
 {
 	unsigned long flags;
 	unsigned int val;
@@ -172,7 +177,8 @@ static void hieth_phy_suspend(void)
 static void hieth_phy_resume(void)
 {
 	/* FIXME: phy power up */
-	hieth_phy_reset();
+	hieth_internal_phy_reset();
+	hieth_external_phy_reset();
 }
 
 static void hieth_funsel_config(void)

@@ -43,7 +43,8 @@ void hieth_sys_init(void)
 	hieth_reset(0);
 	hieth_clk_ena();
 	msleep(100);
-	hieth_phy_reset();
+	hieth_internal_phy_reset();
+	hieth_external_phy_reset();
 }
 
 void hieth_sys_exit(void)

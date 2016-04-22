@@ -2,24 +2,13 @@
  * Helpers for formatting and printing strings
  *
  * Copyright 31 August 2008 James Bottomley
+ * Copyright (C) 2013, Intel Corporation
  */
 #include <linux/kernel.h>
 #include <linux/math64.h>
 #include <linux/export.h>
+#include <linux/ctype.h>
 #include <linux/string_helpers.h>
-
-char *ultohstr(u64 size, char *buf, int len)
-{
-	int ix;
-	char *fmt[] = {"%lld", "%lldK", "%lldM", "%lldG", "%lldT", "%lldT"};
-
-	for (ix = 0; (ix < 5) && !(size & 0x3FF) && size; ix++)
-		size = (size >> 10);
-
-	snprintf(buf, len, fmt[ix], (unsigned long long)size);
-	return buf;
-}
-EXPORT_SYMBOL(ultohstr);
 
 /**
  * string_get_size - get the size in the specified units
@@ -36,15 +25,15 @@ EXPORT_SYMBOL(ultohstr);
 int string_get_size(u64 size, const enum string_size_units units,
 		    char *buf, int len)
 {
-	const char *units_10[] = { "B", "kB", "MB", "GB", "TB", "PB",
+	static const char *units_10[] = { "B", "kB", "MB", "GB", "TB", "PB",
 				   "EB", "ZB", "YB", NULL};
-	const char *units_2[] = {"B", "KiB", "MiB", "GiB", "TiB", "PiB",
+	static const char *units_2[] = {"B", "KiB", "MiB", "GiB", "TiB", "PiB",
 				 "EiB", "ZiB", "YiB", NULL };
-	const char **units_str[] = {
+	static const char **units_str[] = {
 		[STRING_UNITS_10] =  units_10,
 		[STRING_UNITS_2] = units_2,
 	};
-	const unsigned int divisor[] = {
+	static const unsigned int divisor[] = {
 		[STRING_UNITS_10] = 1000,
 		[STRING_UNITS_2] = 1024,
 	};
@@ -79,3 +68,175 @@ int string_get_size(u64 size, const enum string_size_units units,
 	return 0;
 }
 EXPORT_SYMBOL(string_get_size);
+
+static bool unescape_space(char **src, char **dst)
+{
+	char *p = *dst, *q = *src;
+
+	switch (*q) {
+	case 'n':
+		*p = '\n';
+		break;
+	case 'r':
+		*p = '\r';
+		break;
+	case 't':
+		*p = '\t';
+		break;
+	case 'v':
+		*p = '\v';
+		break;
+	case 'f':
+		*p = '\f';
+		break;
+	default:
+		return false;
+	}
+	*dst += 1;
+	*src += 1;
+	return true;
+}
+
+static bool unescape_octal(char **src, char **dst)
+{
+	char *p = *dst, *q = *src;
+	u8 num;
+
+	if (isodigit(*q) == 0)
+		return false;
+
+	num = (*q++) & 7;
+	while (num < 32 && isodigit(*q) && (q - *src < 3)) {
+		num <<= 3;
+		num += (*q++) & 7;
+	}
+	*p = num;
+	*dst += 1;
+	*src = q;
+	return true;
+}
+
+static bool unescape_hex(char **src, char **dst)
+{
+	char *p = *dst, *q = *src;
+	int digit;
+	u8 num;
+
+	if (*q++ != 'x')
+		return false;
+
+	num = digit = hex_to_bin(*q++);
+	if (digit < 0)
+		return false;
+
+	digit = hex_to_bin(*q);
+	if (digit >= 0) {
+		q++;
+		num = (num << 4) | digit;
+	}
+	*p = num;
+	*dst += 1;
+	*src = q;
+	return true;
+}
+
+static bool unescape_special(char **src, char **dst)
+{
+	char *p = *dst, *q = *src;
+
+	switch (*q) {
+	case '\"':
+		*p = '\"';
+		break;
+	case '\\':
+		*p = '\\';
+		break;
+	case 'a':
+		*p = '\a';
+		break;
+	case 'e':
+		*p = '\e';
+		break;
+	default:
+		return false;
+	}
+	*dst += 1;
+	*src += 1;
+	return true;
+}
+
+int string_unescape(char *src, char *dst, size_t size, unsigned int flags)
+{
+	char *out = dst;
+
+	while (*src && --size) {
+		if (src[0] == '\\' && src[1] != '\0' && size > 1) {
+			src++;
+			size--;
+
+			if (flags & UNESCAPE_SPACE &&
+					unescape_space(&src, &out))
+				continue;
+
+			if (flags & UNESCAPE_OCTAL &&
+					unescape_octal(&src, &out))
+				continue;
+
+			if (flags & UNESCAPE_HEX &&
+					unescape_hex(&src, &out))
+				continue;
+
+			if (flags & UNESCAPE_SPECIAL &&
+					unescape_special(&src, &out))
+				continue;
+
+			*out++ = '\\';
+		}
+		*out++ = *src++;
+	}
+	*out = '\0';
+
+	return out - dst;
+}
+EXPORT_SYMBOL(string_unescape);
+
+char *ultohstr(u64 size, char *str, int len)
+{
+	char *unit = "";
+	int rr = 0;
+	unsigned int mm = 0;
+	const char *c;
+	const char fmt[] = " KMGTPE";
+	unsigned int nn = (unsigned int)(size & 0x3FF);
+
+	if (size < 1024ULL) {
+		snprintf(str, len, "%u%s", nn, unit);
+		return str;
+	}
+
+	for (c = fmt; *c && (size & ~0x3FFULL); c++) {
+		mm = nn;
+		if (!rr && mm)
+			rr = 1;
+		size = (size >> 10);
+		nn = (unsigned int)(size & 0x3FF);
+	}
+
+	if (!rr) {
+		snprintf(str, len, "%u%c%s", nn, *c, unit);
+		return str;
+	}
+
+	if (nn > 512) {
+		mm = nn;
+		nn = 0;
+		c++;
+	}
+
+	mm = ((mm * 100) >> 10);
+
+	snprintf(str, len, "%u.%u%c%s", nn, mm, *c, unit);
+
+	return str;
+}
+EXPORT_SYMBOL(ultohstr);

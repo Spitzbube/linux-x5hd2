@@ -8,26 +8,9 @@
 
 #ifndef HISFC350H
 #define HISFC350H
-/******************************************************************************/
-#ifndef CONFIG_HISFC350_REG_BASE_ADDRESS
-#define CONFIG_HISFC350_REG_BASE_ADDRESS               (0x60020000)
-#  warning NOT config CONFIG_HISFC350_REG_BASE_ADDRESS, \
-	used default value, maybe invalid.
-#endif /* CONFIG_HISFC350_REG_BASE_ADDRESS */
-
-#ifndef CONFIG_HISFC350_BUFFER_BASE_ADDRESS
-#define CONFIG_HISFC350_BUFFER_BASE_ADDRESS            (0x26000000)
-#  warning NOT config CONFIG_HISFC350_BUFFER_BASE_ADDRESS, \
-	used default value, maybe invalid.
-#endif /* CONFIG_HISFC350_BUFFER_BASE_ADDRESS */
-
-#ifndef CONFIG_HISFC350_CHIP_NUM
-#define CONFIG_HISFC350_CHIP_NUM                       (2)
-#  warning NOT config CONFIG_HISFC350_CHIP_NUM, \
-	used default value, maybe invalid.
-#endif /* CONFIG_HISFC350_CHIP_NUM */
 
 #define HISFC350_SYSCTRL_LENGTH                        (0x100)
+
 /*****************************************************************************/
 #define HISFC350_MAX_READY_WAIT_JIFFIES                (40 * HZ)
 

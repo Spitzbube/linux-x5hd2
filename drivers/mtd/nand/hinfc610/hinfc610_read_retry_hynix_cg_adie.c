@@ -40,8 +40,8 @@ static char * hinfc610_hynix_cg_adie_otp_check(char *otp)
 		}
 	}
 
-	printk("RR select parameter %d from %d, error %d\n",
-		index, ix, min);
+	pr_err("RR select parameter %d from %d, error %d\n",
+	       index, ix, min);
 	return ptr;
 }
 /*****************************************************************************/
@@ -54,43 +54,58 @@ static int hinfc610_hynix_cg_adie_get_rr_param(struct hinfc_host *host)
 	/* step1: reset the chip */
 	host->send_cmd_reset(host, host->chipselect);
 
-	/* step2: cmd: 0x36, address: 0xAE, data: 0x00 */
+	/* step2: cmd: 0x36, address: 0xFF, data: 0x40 */
 	hinfc_write(host, 1, HINFC610_DATA_NUM);/* data length 1 */
 	writel(0x40, host->chip->IO_ADDR_R); /* data: 0x00 */
 	hinfc_write(host, 0xFF, HINFC610_ADDRL);/* address: 0xAE */
 	hinfc_write(host, 0x36, HINFC610_CMD);  /* cmd: 0x36 */
+	/*
+	 * no need to config HINFC610_OP_WAIT_READY_EN, here not config this bit.
+	 */
 	hinfc_write(host, HINFC610_WRITE_1CMD_1ADD_DATA, HINFC610_OP);
 	WAIT_CONTROLLER_FINISH();
 
-	/* step3: address: 0xB0, data: 0x4D */
+	/* step3: address: 0xCC, data: 0x4D */
 	hinfc_write(host, 1, HINFC610_DATA_NUM);/* data length 1 */
 	writel(0x4D, host->chip->IO_ADDR_R); /* data: 0x4d */
 	hinfc_write(host, 0xCC, HINFC610_ADDRL);/* address: 0xB0 */
-	/* only address and data, without cmd */
+	/*
+	 * no need to config HINFC610_OP_WAIT_READY_EN, here not config this bit.
+	 * only address and data, without cmd
+	 */
 	hinfc_write(host, HINFC610_WRITE_0CMD_1ADD_DATA, HINFC610_OP);
 	WAIT_CONTROLLER_FINISH();
 
 	/* step4: cmd: 0x16, 0x17, 0x04, 0x19 */
 	hinfc_write(host, 0x17 << 8 | 0x16, HINFC610_CMD);
+	/*
+	 * no need to config HINFC610_OP_WAIT_READY_EN, here not config this bit.
+	 */
 	hinfc_write(host, HINFC610_WRITE_2CMD_0ADD_NODATA, HINFC610_OP);
 	WAIT_CONTROLLER_FINISH();
 
 	hinfc_write(host, 0x19 << 8 | 0x04, HINFC610_CMD);
+	/*
+	 * no need to config HINFC610_OP_WAIT_READY_EN, here not config this bit.
+	 */
 	hinfc_write(host, HINFC610_WRITE_2CMD_0ADD_NODATA, HINFC610_OP);
 	WAIT_CONTROLLER_FINISH();
 
 	/* step5: cmd: 0x00 0x30, address: 0x02 00 00 00 */
 	hinfc_write(host, 0x2000000, HINFC610_ADDRL);
+	hinfc_write(host, 0x00, HINFC610_ADDRH);
 	hinfc_write(host, 0x30 << 8 | 0x00, HINFC610_CMD);
 	hinfc_write(host, 0x800, HINFC610_DATA_NUM);
+	/*
+	 * need to config HINFC610_OP_WAIT_READY_EN, here config this bit.
+	 */
 	hinfc_write(host, HINFC610_READ_2CMD_5ADD, HINFC610_OP);
 	WAIT_CONTROLLER_FINISH();
 
 	/*step6 save otp read retry table to mem*/
 	otp = hinfc610_hynix_cg_adie_otp_check(host->chip->IO_ADDR_R + 2);
 	if (!otp) {
-		printk(KERN_ERR "Read Retry select parameter failed, "
-		       "this Nand Chip maybe invalidation.\n");
+		pr_err("Read Retry select parameter failed, this Nand Chip maybe invalidation.\n");
 		return -1;
 	}
 	memcpy(host->rr_data, otp, 64);
@@ -101,7 +116,10 @@ static int hinfc610_hynix_cg_adie_get_rr_param(struct hinfc_host *host)
 
 	/* step8: cmd: 0x38 */
 	hinfc_write(host, 0x38, HINFC610_CMD);
-	hinfc_write(host, HINFC610_WRITE_1CMD_0ADD_NODATA, HINFC610_OP);
+	/*
+	 * need to config HINFC610_OP_WAIT_READY_EN, here config this bit.
+	 */
+	hinfc_write(host, HINFC610_WRITE_1CMD_0ADD_NODATA_WAIT_READY, HINFC610_OP);
 	WAIT_CONTROLLER_FINISH();
 
 	host->enable_ecc_randomizer(host, ENABLE, ENABLE);
@@ -115,8 +133,13 @@ static char hinfc610_hynix_cg_adie__rr_reg[8] = {
 static int hinfc610_hynix_cg_adie_set_rr_reg(struct hinfc_host *host, char *val)
 {
 	int i;
+	int regval;
 	
 	host->enable_ecc_randomizer(host, DISABLE, DISABLE);
+
+	regval = hinfc_read(host, HINFC610_PWIDTH);
+	hinfc_write(host, 0xFFF, HINFC610_PWIDTH);
+
 	hinfc_write(host, 1, HINFC610_DATA_NUM);/* data length 1 */
 
 	for (i = 0; i <= 8; i++) {
@@ -127,6 +150,9 @@ static int hinfc610_hynix_cg_adie_set_rr_reg(struct hinfc_host *host, char *val)
 				hinfc610_hynix_cg_adie__rr_reg[i], HINFC610_ADDRL);
 			hinfc_write(host,
 				0x36, HINFC610_CMD);
+			/*
+			 * no need to config HINFC610_OP_WAIT_READY_EN, here not config this bit.
+			 */
 			hinfc_write(host,
 				HINFC610_WRITE_1CMD_1ADD_DATA,
 				HINFC610_OP);
@@ -134,14 +160,21 @@ static int hinfc610_hynix_cg_adie_set_rr_reg(struct hinfc_host *host, char *val)
 		case 8:
 			hinfc_write(host,
 				0x16, HINFC610_CMD);
+			/*
+			 * only have 1 cmd: 0x16
+			 * no need to config HINFC610_OP_WAIT_READY_EN, here not config this bit.
+			 */
 			hinfc_write(host,
-				HINFC610_WRITE_2CMD_0ADD_NODATA,
+				HINFC610_WRITE_1CMD_0ADD_NODATA,
 				HINFC610_OP);
 			break;
 		default:
 			writel(val[i], host->chip->IO_ADDR_R);
 			hinfc_write(host, 
 				hinfc610_hynix_cg_adie__rr_reg[i], HINFC610_ADDRL);
+			/*
+			 * no need to config HINFC610_OP_WAIT_READY_EN, here not config this bit.
+			 */
 			hinfc_write(host,
 				HINFC610_WRITE_0CMD_1ADD_DATA,
 				HINFC610_OP);
@@ -150,6 +183,7 @@ static int hinfc610_hynix_cg_adie_set_rr_reg(struct hinfc_host *host, char *val)
 		WAIT_CONTROLLER_FINISH();
 	}
 	host->enable_ecc_randomizer(host, ENABLE, ENABLE);
+	hinfc_write(host, regval, HINFC610_PWIDTH);
 	return 0;
 }
 /*****************************************************************************/

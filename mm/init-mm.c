@@ -9,8 +9,6 @@
 #include <asm/pgtable.h>
 #include <asm/mmu.h>
 
-#include <linux/module.h>
-
 #ifndef INIT_MM_CONTEXT
 #define INIT_MM_CONTEXT(name)
 #endif

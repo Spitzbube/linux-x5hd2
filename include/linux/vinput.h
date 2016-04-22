@@ -11,4 +11,10 @@
 #define IOCTK_TC_STATUS         _IOW('i', 0x102, unsigned long)
 #define IOCTK_MUTITC_STATUS     _IOW('i', 0x103, unsigned long)
 
+#define INPUT_UNBLOCK       0
+#define INPUT_BLOCK         1
+#define INPUT_HALFBLOCK     2
+#define INPUT_POWER         116
+#define INPUT_RESERVED      0
+
 #endif

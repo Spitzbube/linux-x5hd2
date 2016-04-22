@@ -14,8 +14,8 @@
 #include <mach/platform.h>
 #include <asm/io.h>
 #include <mach/clock.h>
-#include "mach/io.h"
-#include "../cpu.h"
+#include <mach/io.h>
+#include <mach/cpu.h>
 
 extern struct device_resource hi3716cv200_hinfc610_device_resource;
 /*****************************************************************************/
@@ -85,12 +85,22 @@ struct cpu_info hi3716cv200_cpu_info =
 	.init = hi3716cv200_cpu_init,
 };
 
+/* Hi3719mv100 */
+struct cpu_info hi3719mv100_cpu_info =
+{
+	.name = "Hi3719mv100",
+	.chipid = _HI3719MV100,
+	.chipid_mask = _HI3716CV200_MASK,
+	.resource = hi3716cv200_device_resource,
+	.init = hi3716cv200_cpu_init,
+};
+
 /* Hi3719mv100_a */
-struct cpu_info hi3719mv100_a_cpu_info =
+struct cpu_info hi3719mv100a_cpu_info =
 {
 	.name = "Hi3719mv100_a",
-	.chipid = _HI3719MV100_A,
-	.chipid_mask = _HI3719MV100_A_MASK,
+	.chipid = _HI3719MV100A,
+	.chipid_mask = _HI3719MV100A_MASK,
 	.resource = hi3716cv200_device_resource,
 	.init = hi3716cv200_cpu_init,
 };
@@ -125,3 +135,22 @@ struct cpu_info hi3716hv200_cpu_info =
 	.init = hi3716cv200_cpu_init,
 };
 
+/* Hi3716Mv400 */
+struct cpu_info hi3716mv400_cpu_info =
+{
+	.name = "Hi3716Mv400",
+	.chipid = _HI3716MV400,
+	.chipid_mask = _HI3716MV400_MASK,
+	.resource = hi3716cv200_device_resource,
+	.init = hi3716cv200_cpu_init,
+};
+
+/* Hi3718mv100 */
+struct cpu_info hi3718mv100_cpu_info =
+{
+	.name = "Hi3718mv100",
+	.chipid = _HI3718MV100,
+	.chipid_mask = _HI3718MV100_MASK,
+	.resource = hi3716cv200_device_resource,
+	.init = hi3716cv200_cpu_init,
+};

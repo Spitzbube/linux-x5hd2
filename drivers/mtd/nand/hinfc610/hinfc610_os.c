@@ -31,8 +31,8 @@ struct partition_info
 extern int register_mtd_partdev(struct mtd_info *mtd);
 extern int unregister_mtd_partdev(struct mtd_info *mtd);
 #else
-int register_mtd_partdev(struct mtd_info *mtd){ return 0; };
-int unregister_mtd_partdev(struct mtd_info *mtd){return 0;};
+static int register_mtd_partdev(struct mtd_info *mtd){ return 0; };
+static int unregister_mtd_partdev(struct mtd_info *mtd){return 0;};
 #endif
 
 static const char *part_probes_type[] = { "cmdlinepart", NULL, };
@@ -44,7 +44,7 @@ static int __init parse_nand_partitions(const struct tag *tag)
 	int i;
 
 	if (tag->hdr.size <= 2) {
-		PR_BUG("tag->hdr.size <= 2\n");
+		hinfc_pr_bug("tag->hdr.size <= 2\n");
 		return 0;
 	}
 	ptn_info.parts_num = (tag->hdr.size - 2)
@@ -79,7 +79,7 @@ static int __init parse_nand_param(const struct tag *tag)
 	nand_otp_len = ((tag->hdr.size << 2) - sizeof(struct tag_header));
 
 	if (nand_otp_len > sizeof(nand_otp)) {
-		PR_BUG("tag->hdr.size <= 2\n");
+		hinfc_pr_bug("tag->hdr.size <= 2\n");
 		return 0;
 	}
 	memcpy(nand_otp, &tag->u, nand_otp_len);
@@ -112,7 +112,7 @@ static int hinfc610_os_probe(struct platform_device * pltdev)
 		+ sizeof(struct mtd_info);
 	host = kmalloc(size, GFP_KERNEL);
 	if (!host) {
-		PR_BUG("failed to allocate device structure.\n");
+		hinfc_pr_bug("failed to allocate device structure.\n");
 		return -ENOMEM;
 	}
 	memset((char *)host, 0, size);
@@ -124,13 +124,13 @@ static int hinfc610_os_probe(struct platform_device * pltdev)
 
 	res = platform_get_resource_byname(pltdev, IORESOURCE_MEM, "base");
 	if (!res) {
-		PR_BUG("Can't get resource.\n");
+		hinfc_pr_bug("Can't get resource.\n");
 		return -EIO;
 	}
 
 	host->iobase = ioremap(res->start, res->end - res->start + 1);
 	if (!host->iobase) {
-		PR_BUG("ioremap failed\n");
+		hinfc_pr_bug("ioremap failed\n");
 		kfree(host);
 		return -EIO;
 	}
@@ -141,14 +141,14 @@ static int hinfc610_os_probe(struct platform_device * pltdev)
 
 	res = platform_get_resource_byname(pltdev, IORESOURCE_MEM, "buffer");
 	if (!res) {
-		PR_BUG("Can't get resource.\n");
+		hinfc_pr_bug("Can't get resource.\n");
 		return -EIO;
 	}
 
 	chip->IO_ADDR_R = chip->IO_ADDR_W = ioremap_nocache(res->start,
 		res->end - res->start + 1);
 	if (!chip->IO_ADDR_R) {
-		PR_BUG("ioremap failed\n");
+		hinfc_pr_bug("ioremap failed\n");
 		return -EIO;
 	}
 
@@ -163,24 +163,24 @@ static int hinfc610_os_probe(struct platform_device * pltdev)
 	chip->read_buf    = hinfc610_read_buf;
 
 	chip->chip_delay = HINFC610_CHIP_DELAY;
-	chip->options    = NAND_NO_AUTOINCR | NAND_SKIP_BBTSCAN;
+	chip->options    = NAND_NEED_READRDY | NAND_SKIP_BBTSCAN;
 	chip->ecc.layout = NULL;
 	chip->ecc.mode   = NAND_ECC_NONE;
 
 	host->clk = clk_get_sys("hinfc610", NULL);
 	if (IS_ERR(host->clk)) {
-		PR_BUG("hinfc610 clock not found.\n");
+		hinfc_pr_bug("hinfc610 clock not found.\n");
 		return -EIO;
 	}
 	host->enable = hinfc610_os_enable;
 
 	if (hinfc610_nand_init(host, chip)) {
-		PR_BUG("failed to allocate device buffer.\n");
+		hinfc_pr_bug("failed to allocate device buffer.\n");
 		return -EIO;
 	}
 
 	if (nand_otp_len) {
-		PR_MSG("Copy Nand read retry parameter from boot,"
+		hinfc_pr_msg("Copy Nand read retry parameter from boot,"
 		       " parameter length %d.\n", nand_otp_len);
 		memcpy(host->rr_data, nand_otp, nand_otp_len);
 	}
@@ -203,10 +203,8 @@ static int hinfc610_os_probe(struct platform_device * pltdev)
 
 fail:
 	if (host->buffer) {
-		dma_free_coherent(host->dev,
-			(host->pagesize + host->oobsize),
-			host->buffer,
-			host->dma_buffer);
+		dma_free_coherent(host->dev, (host->pagesize + host->oobsize),
+				  host->buffer, host->dma_buffer);
 		host->buffer = NULL;
 	}
 	iounmap(chip->IO_ADDR_W);
@@ -228,10 +226,9 @@ static int hinfc610_os_remove(struct platform_device *pltdev)
 
 	nand_release(host->mtd);
 
-	dma_free_coherent(host->dev,
-		(NAND_MAX_PAGESIZE + NAND_MAX_OOBSIZE),
-		host->buffer,
-		host->dma_buffer);
+	dma_free_coherent(host->dev, (host->pagesize + host->oobsize),
+			  host->buffer, host->dma_buffer);
+
 	iounmap(host->chip->IO_ADDR_W);
 	iounmap(host->iobase);
 	kfree(host);

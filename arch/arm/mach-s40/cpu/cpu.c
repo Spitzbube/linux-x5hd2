@@ -10,29 +10,33 @@
 #include <linux/kernel.h>
 #include <linux/device.h>
 #include <linux/string.h>
-#include <mach/platform.h>
 #include <linux/io.h>
-#include <mach/io.h>
 #include <asm/bug.h>
-
-#include "cpu.h"
+#include <mach/hardware.h>
+#include <mach/cpu.h>
 
 /*****************************************************************************/
 
 extern struct cpu_info hi3716cv200es_cpu_info;
 extern struct cpu_info hi3716cv200_cpu_info;
-extern struct cpu_info hi3719mv100_a_cpu_info;
+extern struct cpu_info hi3719mv100_cpu_info;
+extern struct cpu_info hi3719mv100a_cpu_info;
 extern struct cpu_info hi3718cv100_cpu_info;
 extern struct cpu_info hi3719cv100_cpu_info;
 extern struct cpu_info hi3716hv200_cpu_info;
+extern struct cpu_info hi3716mv400_cpu_info;
+extern struct cpu_info hi3718mv100_cpu_info;
 
 static struct cpu_info *support_cpu_info[] = {
 	&hi3716cv200es_cpu_info,
 	&hi3716cv200_cpu_info,
-	&hi3719mv100_a_cpu_info,
+	&hi3719mv100_cpu_info,
+	&hi3719mv100a_cpu_info,
 	&hi3718cv100_cpu_info,
 	&hi3719cv100_cpu_info,
 	&hi3716hv200_cpu_info,
+	&hi3716mv400_cpu_info,
+	&hi3718mv100_cpu_info,
 	NULL,
 };
 
@@ -44,13 +48,12 @@ static long long get_chipid_reg(void)
 	long long chipid = 0;
 	long long val = 0;
 
-	chipid = (long long)readl(IO_ADDRESS(REG_BASE_SCTL + REG_SC_SYSID0));
-	val = (long long)readl(IO_ADDRESS(REG_BASE_PERI_CTRL + REG_PERI_SOC_FUSE));
+	chipid = (long long)readl(__io_address(REG_BASE_SCTL + REG_SC_SYSID0));
+	val = (long long)readl(__io_address(REG_BASE_PERI_CTRL + REG_PERI_SOC_FUSE));
 	chipid = ((val & (0x1F << 16)) << 16) | (chipid & 0xFFFFFFFF);
-	
+
 	return chipid;
 }
-
 /*****************************************************************************/
 
 void __init arch_cpu_init(void)

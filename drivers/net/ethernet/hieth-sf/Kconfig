@@ -57,6 +57,7 @@ config HIETH_MII_RMII_MODE_U
 	int "hieth mii/rmii mode for up port (mii:0/rmii:1)"
 	range 0 1
 	default "1" if (ARCH_GODBOX || ARCH_S40)
+	depends on ARCH_GODBOX
 	help
 	  hieth mode as mii:0/rmii:1 for up port.
 
@@ -64,6 +65,7 @@ config HIETH_MII_RMII_MODE_D
 	int "hieth mii/rmii mode for down port (mii:0/rmii:1)"
 	range 0 1
 	default "1"  if (ARCH_GODBOX || ARCH_S40)
+	depends on ARCH_GODBOX
 	help
 	  hieth mode as mii:0/rmii:1 for down port.
 
@@ -71,13 +73,15 @@ config HIETH_PHYID_U
 	int "hieth phyid for up port"
 	range 0 31
 	default "1"
+	depends on ARCH_GODBOX
 	help
 	  hieth phyid for up port.
 
 config HIETH_PHYID_D
-	int "hieth phyid for down port"
+	int "hieth phyid for down port" if (ARCH_GODBOX)
 	range 0 31
 	default "3"
+	depends on ARCH_GODBOX
 	help
 	  hieth phyid addr for down port.
 
@@ -96,20 +100,21 @@ config HIETH_TRACE_LEVEL
 
 config HIETH_RESET_HELPER_EN
 	bool "hieth reset helper"
-	default y
+	depends on ARCH_GODBOX
+	default y 
 	help
 	  hieth phy reset gpio helper.
 
 config HIETH_RESET_HELPER_GPIO_BASE
 	hex "hieth reset helper on which gpio group"
-	depends on HIETH_RESET_HELPER_EN
+	depends on HIETH_RESET_HELPER_EN && ARCH_GODBOX
 	default "0x101EF000" if (ARCH_GODBOX)
 	help
 	  hieth gpio group for reset.
 
 config HIETH_RESET_HELPER_GPIO_BIT
 	int "hieth reset helper on gpio bit"
-	depends on HIETH_RESET_HELPER_EN
+	depends on HIETH_RESET_HELPER_EN && ARCH_GODBOX
 	range 0 7
 	default "6" if (ARCH_GODBOX)
 	help
@@ -117,7 +122,7 @@ config HIETH_RESET_HELPER_GPIO_BIT
 
 config HIETH_RESET_HELPER_GPIO_VALUE
 	int "hieth reset helper on gpio value"
-	depends on HIETH_RESET_HELPER_EN
+	depends on HIETH_RESET_HELPER_EN && ARCH_GODBOX
 	range 0 1
 	default "0" if (ARCH_GODBOX)
 	help

@@ -3,6 +3,9 @@
 
 #include <mach/io.h>
 
+/* SRAM Base Address Register */
+#define SRAM_BASE_ADDRESS                               0xFFFF0000
+
 #define S40_REG_BASE                                    0xF8000000
 #define REG_BASE_SCTL                                   (S40_REG_BASE + 0)
 

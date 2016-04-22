@@ -1,17 +1,17 @@
 /* suppose IO_ADDRESS cover all these address range */
-#define HIGMAC_SYSCTL_IOBASE		(IO_ADDRESS(0xF8A220CC))
-#define HIGMAC_FEPHY_CRG_CTRL		(IO_ADDRESS(0xF8A22120))
-#define HIGMAC_FEPHY_PHY_ADDR		(IO_ADDRESS(0xF8A20118))
-#define HIGMAC_FEPHY_SELECT		(IO_ADDRESS(0xF8A20008))
-#define HIGMAC_FEPHY_LDO_CTRL		(IO_ADDRESS(0xF8A20844))
+#define HIGMAC_SYSCTL_IOBASE	((void __iomem *)(IO_ADDRESS(0xF8A220CC)))
+#define HIGMAC_FEPHY_CRG_CTRL	((void __iomem *)(IO_ADDRESS(0xF8A22120)))
+#define HIGMAC_FEPHY_PHY_ADDR	((void __iomem *)(IO_ADDRESS(0xF8A20118)))
+#define HIGMAC_FEPHY_SELECT	((void __iomem *)(IO_ADDRESS(0xF8A20008)))
+#define HIGMAC_FEPHY_LDO_CTRL	((void __iomem *)(IO_ADDRESS(0xF8A20844)))
 
 #define HIGMAC_FWD_IOBASE		(IO_ADDRESS(0xF9842000))
 
-#define HIGMAC_MAC0_IF_CTRL		(IO_ADDRESS(0xF984300C))
-#define HIGMAC_MAC1_IF_CTRL		(IO_ADDRESS(0xF9843010))
+#define HIGMAC_MAC0_IF_CTRL	((void __iomem *)(IO_ADDRESS(0xF984300C)))
+#define HIGMAC_MAC1_IF_CTRL	((void __iomem *)(IO_ADDRESS(0xF9843010)))
 
 /* DEFAULT mac1's phy reset pin */
-#define MAC1_PHY_RESET_BASE		IO_ADDRESS(0xF8A22168)
+#define MAC1_PHY_RESET_BASE	((void __iomem *)(IO_ADDRESS(0xF8A22168)))
 #define MAC1_PHY_RESET_BIT		1
 
 void __iomem *soc_fwdctl_iobase(void)
@@ -30,13 +30,13 @@ void higmac_hw_mac_core_reset(struct higmac_netdev_local *ld)
 	/* TODO: enable clk here. fpga use fixed clk */
 #ifndef CONFIG_S40_FPGA
 	v = 0x7f; /* enable clk, select DPLL */
-	writel(v, HIGMAC_SYSCTL_IOBASE);
+	writel((u32)v, HIGMAC_SYSCTL_IOBASE);
 #endif
 	/* set reset bit */
 	index = ld->index + 8;/* 8--reset bit offset */
-	v = readl(HIGMAC_SYSCTL_IOBASE);
+	v = readl((void __iomem *)HIGMAC_SYSCTL_IOBASE);
 	v |= 0x5 << index;
-	writel(v, HIGMAC_SYSCTL_IOBASE);
+	writel((u32)v, HIGMAC_SYSCTL_IOBASE);
 	spin_unlock_irqrestore(&adapter->lock, flags);
 
 	udelay(50);
@@ -45,7 +45,7 @@ void higmac_hw_mac_core_reset(struct higmac_netdev_local *ld)
 	/* clear reset bit */
 	v = readl(HIGMAC_SYSCTL_IOBASE);
 	v &= ~(0x5 << index);
-	writel(v, HIGMAC_SYSCTL_IOBASE);
+	writel((u32)v, HIGMAC_SYSCTL_IOBASE);
 
 	spin_unlock_irqrestore(&adapter->lock, flags);
 }
@@ -68,18 +68,18 @@ void higmac_set_macif(struct higmac_netdev_local *ld, int mode, int speed)
 	/* soft reset mac_if */
 	v = readl(HIGMAC_SYSCTL_IOBASE);
 	v |= 1 << (ld->index + 10);/* bit10 for macif0 */
-	writel(v, HIGMAC_SYSCTL_IOBASE);
+	writel((u32)v, HIGMAC_SYSCTL_IOBASE);
 
 	/* config mac_if */
 	if (ld->index)/* eth1 */
-		writel(mode, HIGMAC_MAC1_IF_CTRL);
+		writel((u32)mode, HIGMAC_MAC1_IF_CTRL);
 	else
-		writel(mode, HIGMAC_MAC0_IF_CTRL);
+		writel((u32)mode, HIGMAC_MAC0_IF_CTRL);
 
 	/* undo reset */
 	v = readl(HIGMAC_SYSCTL_IOBASE);
 	v &= ~(1 << (ld->index + 10));
-	writel(v, HIGMAC_SYSCTL_IOBASE);
+	writel((u32)v, HIGMAC_SYSCTL_IOBASE);
 	spin_unlock_irqrestore(&adapter->lock, flags);
 }
 
@@ -101,11 +101,11 @@ void higmac_hw_internal_fephy_reset(struct higmac_adapter *adapter)
 
 	spin_lock_irqsave(&adapter->lock, flags);
 	/* suppose internal phy can only be used as mac0's phy */
-	writel(higmac_board_info[0].phy_addr, HIGMAC_FEPHY_PHY_ADDR);
+	writel((u32)higmac_board_info[0].phy_addr, HIGMAC_FEPHY_PHY_ADDR);
 
 	v = readl(HIGMAC_FEPHY_CRG_CTRL);
 	v |= 0x1; /* use 25MHz clock, enable clk */
-	writel(v, HIGMAC_FEPHY_CRG_CTRL);
+	writel((u32)v, HIGMAC_FEPHY_CRG_CTRL);
 	spin_unlock_irqrestore(&adapter->lock, flags);
 
 	udelay(10);
@@ -113,7 +113,7 @@ void higmac_hw_internal_fephy_reset(struct higmac_adapter *adapter)
 	spin_lock_irqsave(&adapter->lock, flags);
 	v = readl(HIGMAC_FEPHY_CRG_CTRL);
 	v |= (0x1 << 4); /* set reset bit */
-	writel(v, HIGMAC_FEPHY_CRG_CTRL);
+	writel((u32)v, HIGMAC_FEPHY_CRG_CTRL);
 	spin_unlock_irqrestore(&adapter->lock, flags);
 
 	udelay(10);
@@ -121,7 +121,7 @@ void higmac_hw_internal_fephy_reset(struct higmac_adapter *adapter)
 	spin_lock_irqsave(&adapter->lock, flags);
 	v = readl(HIGMAC_FEPHY_CRG_CTRL);
 	v &= ~(0x1 << 4); /* clear reset bit */
-	writel(v, HIGMAC_FEPHY_CRG_CTRL);
+	writel((u32)v, HIGMAC_FEPHY_CRG_CTRL);
 	spin_unlock_irqrestore(&adapter->lock, flags);
 
 	msleep(20); /* delay at least 15ms for MDIO operation */
@@ -203,4 +203,17 @@ void higmac_hw_all_clk_disable(void)
 {
 	writel(0, HIGMAC_SYSCTL_IOBASE);/* gmac clk disable */
 	writel(0, HIGMAC_FEPHY_CRG_CTRL);/* inside fephy clk disable */
+}
+
+void higmac_hw_all_clk_enable(void)
+{
+	u32 v = 0;
+
+	v = readl(HIGMAC_FEPHY_CRG_CTRL);
+	v |= 0x1;
+	writel(v, HIGMAC_FEPHY_CRG_CTRL);/* inside fephy clk enable */
+
+	v = readl(HIGMAC_SYSCTL_IOBASE);
+	v |= 0x7f;
+	writel(v, HIGMAC_SYSCTL_IOBASE);/* gmac clk enable */
 }

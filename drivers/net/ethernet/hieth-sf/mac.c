@@ -136,4 +136,11 @@ int hieth_set_mii_mode(struct hieth_netdev_local *ld, int mode)
 	return old;
 }
 
+void hieth_set_rcv_len_max(struct hieth_netdev_local *ld, int cnt)
+{
+	local_lock(ld);
+	hieth_writel_bits(ld, cnt, UD_REG_NAME(MAC_SET), BITS_LEN_MAX);
+	local_unlock(ld);
+}
+
 /* vim: set ts=8 sw=8 tw=78: */

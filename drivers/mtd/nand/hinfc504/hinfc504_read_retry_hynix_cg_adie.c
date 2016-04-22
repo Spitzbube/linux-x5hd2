@@ -54,7 +54,7 @@ static int hinfc504_hynix_cg_adie_get_rr_param(struct hinfc_host *host)
 	/* step1: reset the chip */
 	host->send_cmd_reset(host, host->chipselect);
 
-	/* step2: cmd: 0x36, address: 0xAE, data: 0x00 */
+	/* step2: cmd: 0x36, address: 0xFF, data: 0x40 */
 	hinfc_write(host, 1, HINFC504_DATA_NUM);/* data length 1 */
 	writel(0x40, host->chip->IO_ADDR_R); /* data: 0x00 */
 	hinfc_write(host, 0xFF, HINFC504_ADDRL);/* address: 0xAE */
@@ -62,7 +62,7 @@ static int hinfc504_hynix_cg_adie_get_rr_param(struct hinfc_host *host)
 	hinfc_write(host, HINFC504_WRITE_1CMD_1ADD_DATA, HINFC504_OP);
 	WAIT_CONTROLLER_FINISH();
 
-	/* step3: address: 0xB0, data: 0x4D */
+	/* step3: address: 0xCC, data: 0x4D */
 	hinfc_write(host, 1, HINFC504_DATA_NUM);/* data length 1 */
 	writel(0x4D, host->chip->IO_ADDR_R); /* data: 0x4d */
 	hinfc_write(host, 0xCC, HINFC504_ADDRL);/* address: 0xB0 */
@@ -81,6 +81,7 @@ static int hinfc504_hynix_cg_adie_get_rr_param(struct hinfc_host *host)
 
 	/* step5: cmd: 0x00 0x30, address: 0x02 00 00 00 */
 	hinfc_write(host, 0x2000000, HINFC504_ADDRL);
+	hinfc_write(host, 0x00, HINFC504_ADDRH);
 	hinfc_write(host, 0x30 << 8 | 0x00, HINFC504_CMD);
 	hinfc_write(host, 0x800, HINFC504_DATA_NUM);
 	hinfc_write(host, HINFC504_READ_2CMD_5ADD, HINFC504_OP);
@@ -101,7 +102,7 @@ static int hinfc504_hynix_cg_adie_get_rr_param(struct hinfc_host *host)
 
 	/* step8: cmd: 0x38 */
 	hinfc_write(host, 0x38, HINFC504_CMD);
-	hinfc_write(host, HINFC504_WRITE_1CMD_0ADD_NODATA, HINFC504_OP);
+	hinfc_write(host, HINFC504_WRITE_1CMD_0ADD_NODATA_WAIT_READY, HINFC504_OP);
 	WAIT_CONTROLLER_FINISH();
 
 	host->enable_ecc_randomizer(host, ENABLE, ENABLE);
@@ -115,8 +116,13 @@ static char hinfc504_hynix_cg_adie__rr_reg[8] = {
 static int hinfc504_hynix_cg_adie_set_rr_reg(struct hinfc_host *host, char *val)
 {
 	int i;
+	int regval;
 	
 	host->enable_ecc_randomizer(host, DISABLE, DISABLE);
+
+	regval = hinfc_read(host, HINFC504_PWIDTH);
+	hinfc_write(host, 0xFFF, HINFC504_PWIDTH);
+
 	hinfc_write(host, 1, HINFC504_DATA_NUM);/* data length 1 */
 
 	for (i = 0; i <= 8; i++) {
@@ -135,7 +141,7 @@ static int hinfc504_hynix_cg_adie_set_rr_reg(struct hinfc_host *host, char *val)
 			hinfc_write(host,
 				0x16, HINFC504_CMD);
 			hinfc_write(host,
-				HINFC504_WRITE_2CMD_0ADD_NODATA,
+				HINFC504_WRITE_1CMD_0ADD_NODATA,
 				HINFC504_OP);
 			break;
 		default:
@@ -150,6 +156,7 @@ static int hinfc504_hynix_cg_adie_set_rr_reg(struct hinfc_host *host, char *val)
 		WAIT_CONTROLLER_FINISH();
 	}
 	host->enable_ecc_randomizer(host, ENABLE, ENABLE);
+	hinfc_write(host, regval, HINFC504_PWIDTH);
 	return 0;
 }
 /*****************************************************************************/

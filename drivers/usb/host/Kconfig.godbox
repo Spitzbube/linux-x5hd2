@@ -8,9 +8,6 @@ menuconfig HIUSB_HOST
 	bool "hiusb(ehci/ohci) family usb host device support"
 	depends on (ARCH_GODBOX)
 	default y if (ARCH_GODBOX)
-	select USB
-	select USB_ARCH_HAS_EHCI
-	select USB_ARCH_HAS_OHCI
 	help
 	  This selects the usb(ehci/ohci) family usb host device.
 

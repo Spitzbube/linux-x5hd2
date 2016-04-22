@@ -10,8 +10,9 @@
 #include <linux/io.h>
 #include <asm/system.h>
 #include <asm/unaligned.h>
+#include <mach/hardware.h>
 
-#define PERI_CRG36              (IO_ADDRESS(0x101F5000 + 0xd0))
+#define PERI_CRG36              (__io_address(0x101F5000 + 0xd0))
 #define USB_CKEN                (1 << 8)
 #define USB_CTRL_UTMI1_REG      (1 << 6)
 #define USB_CTRL_UTMI0_REG      (1 << 5)
@@ -20,16 +21,16 @@
 #define USBPHY_PORT0_TREQ       (1 << 2)
 #define USBPHY_REQ              (1 << 1)
 #define USB_AHB_SRST_REQ        (1 << 0)
-#define PERI_USB0               (IO_ADDRESS(0x10200000 + 0x28))
+#define PERI_USB0               (__io_address(0x10200000 + 0x28))
 #define WORDINTERFACE           (1 << 0)
 #define ULPI_BYPASS_EN          (1 << 3)
 #define SS_BURST4_EN            (1 << 7)
 #define SS_BURST8_EN            (1 << 8)
 #define SS_BURST16_EN           (1 << 9)
 
-#define WDG_LOAD                (IO_ADDRESS(0x10201000 + 0x0000))
-#define WDG_CONTROL             (IO_ADDRESS(0x10201000 + 0x0008))
-#define WDG_LOCK                (IO_ADDRESS(0x10201000 + 0x0c00))
+#define WDG_LOAD                (__io_address(0x10201000 + 0x0000))
+#define WDG_CONTROL             (__io_address(0x10201000 + 0x0008))
+#define WDG_LOCK                (__io_address(0x10201000 + 0x0c00))
 
 void hiusb_start_hcd(void)
 {

@@ -67,21 +67,17 @@ static int set_resume(int eth_n)
 	return 0;
 }
 
-static int hw_states_read(char *page, char **start, off_t off,
-			  int count, int *eof, void *data)
+static int hw_states_read(struct seq_file *m, void *v)
 {
 	struct higmac_netdev_local *ld;
-	int len = 0, i;
+	int  i;
 
-	if (off)
-		return 0;
+#define sprintf_io(name, base)					\
+	seq_printf(m, name, readl(io_base + base))
 
-#define sprintf_io(name, base)	\
-		len += sprintf(&page[len], name, readl(io_base + base))
-
-#define sprintf_pkts(name, rx_base, tx_base)	\
-	len += sprintf(&page[len], "rx_" name "%u\t\t\ttx_" name "%u\n",\
-				readl(io_base + rx_base),\
+#define sprintf_pkts(name, rx_base, tx_base)			\
+	seq_printf(m, "rx_" name "%u\t\t\ttx_" name "%u\n",	\
+				readl(io_base + rx_base),	\
 				readl(io_base + tx_base))
 
 	for_each_gmac_netdev_local_priv(ld, i) {
@@ -91,8 +87,7 @@ static int hw_states_read(char *page, char **start, off_t off,
 		if (!netif_running(ld->netdev))
 			continue;
 
-		len += sprintf(&page[len],
-			"-------------------gmac[%d]-------------------\n", i);
+		seq_printf(m, "----------------gmac[%d]----------------\n", i);
 		sprintf_pkts("ok_bytes:", 0x80, 0x100);
 		sprintf_pkts("bad_bytes:", 0x84, 0x104);
 		sprintf_pkts("uc_pkts:", 0x88, 0x108);
@@ -107,50 +102,45 @@ static int hw_states_read(char *page, char **start, off_t off,
 		sprintf_pkts("pkts_1519_MAX:", 0xac, 0x12c);
 		sprintf_io("rx_fcs_errors:%u\n", 0xb0);
 		/* add more here */
+
 	}
 #undef sprintf_io
 #undef sprintf_pkts
 
-	return len;
+	return 0;
 }
 
-static int hw_fwd_mac_tbl_read(char *page, char **start, off_t off,
-			       int count, int *eof, void *data)
+static int hw_fwd_mac_tbl_read(struct seq_file *m, void *v)
 {
 	void __iomem *io_base = get_adapter()->fwdctl_iobase;
 	struct fwd_mac_tbl tbl;
-	int len = 0, i;
-
-	if (off)
-		return 0;
+	int  i;
 
 	if (!io_base)
 		return 0;
 
-	len += sprintf(&page[len], "hw_index owner\tto-cpu "
-		       "to-other\t\tmac-addr\n");
+	seq_puts(m, "hw_index owner\tto-cpu ""to-other\t\tmac-addr\n");
 	for (i = 0; i < FWD_TBL_ENTRY_NUMS; i++) {
 		tbl.mac_tbl_l.val = readl(io_base + FW_MAC_TBL_L + i * 8);
 		tbl.mac_tbl_h.val = readl(io_base + FW_MAC_TBL_H + i * 8);
-		if (tbl.mac_tbl_h.bits.valid) {	/* tbl entry valid */
-			len += sprintf(&page[len], "%5d\t  %s\t%5d %5d\t\t"
-				       "%02hhx-%02hhx-%02hhx-%02hhx-%02hhx-%02hhx\n",
-				       i,
-				       tbl.mac_tbl_h.bits.owner ? "eth1" : "eth0",
-				       tbl.mac_tbl_h.bits.to_cpu,
-				       tbl.mac_tbl_h.bits.to_other,
-				       tbl.mac_tbl_h.bits.mac5,
-				       tbl.mac_tbl_h.bits.mac4,
-				       tbl.mac_tbl_l.mac[3],
-				       tbl.mac_tbl_l.mac[2],
-				       tbl.mac_tbl_l.mac[1],
-				       tbl.mac_tbl_l.mac[0]);
-		}
+		if (!tbl.mac_tbl_h.bits.valid) /* tbl entry valid */
+			continue;
+
+		seq_printf(m, "%5d\t  %s\t%5d %5d\t\t"
+				"%02hhx-%02hhx-%02hhx-%02hhx-%02hhx-%02hhx\n",
+				i,
+				tbl.mac_tbl_h.bits.owner ? "eth1" : "eth0",
+				tbl.mac_tbl_h.bits.to_cpu,
+				tbl.mac_tbl_h.bits.to_other,
+				tbl.mac_tbl_h.bits.mac5,
+				tbl.mac_tbl_h.bits.mac4,
+				tbl.mac_tbl_l.mac[3],
+				tbl.mac_tbl_l.mac[2],
+				tbl.mac_tbl_l.mac[1],
+				tbl.mac_tbl_l.mac[0]);
 	}
 
-	*eof = 1;
-
-	return len;
+	return 0;
 }
 
 static const char * const mode_text[] = {
@@ -160,32 +150,27 @@ static const char * const mode_text[] = {
 	[MODE3] = "mode3",
 };
 
-static int work_mode_proc_read(char *page, char **start, off_t off,
-			       int count, int *eof, void *data)
+static int work_mode_proc_read(struct seq_file *m, void *v)
 {
 	struct higmac_adapter *adapter = get_adapter();
-	int len = 0;
 
-	if (off)
-		return 0;
-
-	len += sprintf(&page[len], "%s(%d)", mode_text[adapter->work_mode],
-		       adapter->work_mode);
+	seq_printf(m, "%s(%d)",	mode_text[adapter->work_mode],
+			adapter->work_mode);
 
 	if (adapter->work_mode == MODE1 || adapter->work_mode == MODE2)
-		len += sprintf(&page[len], ", master(%s)",
+		seq_printf(m, ", master(%s)",
 			       adapter->master ? "eth1" : "eth0");
 
-	len += sprintf(&page[len], "\n");
+	seq_puts(m, "\n");
 
-	return len;
+	return 0;
 }
 
-static int work_mode_proc_write(struct file *file, const char __user *buf,
-				unsigned long count, void *data)
+static ssize_t work_mode_proc_write(struct file *file, const char __user *buf,
+				size_t count, loff_t *pos)
 {
 	int mode, master, ret;
-	char line[8], *s;
+	char line[8] = {0}, *token, *first_token;
 
 	if (count > 8)
 		count = 8;
@@ -193,51 +178,53 @@ static int work_mode_proc_write(struct file *file, const char __user *buf,
 	if (ret)
 		return -EFAULT;
 
-	mode = simple_strtoul(line, &s, 0);
-	s = strchr(s, ',');	       /* mode, master */
-	if (s) {
-		while (*s == ' ' || *s == ',')
-			s++;
-		master = simple_strtoul(s, 0, 0);
+	token = &line[0];
+	first_token = strsep(&token, ",");
+	ret = kstrtoul(first_token, 0, (unsigned long *)&mode);
+	if (ret)
+		return ret;
+
+	if (token) {
+		while (*token == ' ')
+			token++;
+		ret = kstrtoul(token, 0, (unsigned long *)&master);
+		if (ret)
+			return ret;
 	} else
 		master = 0;
 
 	ret = set_work_mode(mode, master);
 
-	return ret ? : count;
+	return (ssize_t)ret ? : count;
 }
 
-static int fwd_proc_read(char *page, char **start, off_t off,
-			 int count, int *eof, void *data)
+static int fwd_proc_read(struct seq_file *m, void *v)
 {
 	struct higmac_adapter *adapter = get_adapter();
-	int len = 0, fwd = adapter->forcing_fwd;
+	int  fwd = adapter->forcing_fwd;
 
-	if (off)
-		return 0;
-
-	len += sprintf(&page[len], "%d", fwd);
+	seq_printf(m, "%d", fwd);
 	switch (fwd) {
 	case 1:
-		len += sprintf(&page[len], " : eth0 -> eth1");
+		seq_puts(m, " : eth0 -> eth1");
 		break;
 	case 2:
-		len += sprintf(&page[len], " : eth0 <- eth1");
+		seq_puts(m, " : eth0 <- eth1");
 		break;
 	case 3:
-		len += sprintf(&page[len], " : eth0 <-> eth1");
+		seq_puts(m, " : eth0 <-> eth1");
 		break;
 	default:
 		break;
 	}
 
-	len += sprintf(&page[len], "\n");
+	seq_puts(m, "\n");
 
-	return len;
+	return 0;
 }
 
-static int fwd_proc_write(struct file *file, const char __user *buf,
-			  unsigned long count, void *data)
+static ssize_t fwd_proc_write(struct file *file, const char __user *buf,
+			  size_t count, loff_t *pos)
 {
 	int val, ret;
 	char line[8];
@@ -247,46 +234,41 @@ static int fwd_proc_write(struct file *file, const char __user *buf,
 	ret = copy_from_user(line, buf, count);
 	if (ret)
 		return -EFAULT;
-
-	val = simple_strtoul(line, NULL, 0);
+	ret = kstrtoul(&line[0], 0, (unsigned long *)&val);
+	if (ret)
+		return ret;
 	ret = set_forcing_fwd(val);
 
-	return ret ? : count;
+	return (ssize_t)ret ? : count;
 }
 
-static int debug_level_proc_read(char *page, char **start, off_t off,
-				 int count, int *eof, void *data)
+static int debug_level_proc_read(struct seq_file *m, void *v)
 {
 	struct higmac_adapter *adapter = get_adapter();
 	struct higmac_netdev_local *ld;
-	int len = 0, i, j;
+	int i, j;
 
-	if (off)
-		return 0;
-
-	len += sprintf(&page[len], "debug_level:0x%x\n", adapter->debug_level);
+	seq_printf(m, "debug_level:0x%x\n", adapter->debug_level);
 
 	for_each_gmac_netdev_local_priv(ld, i) {
 		if (!ld->phy)
 			continue;
 		if (!netif_running(ld->netdev))
 			continue;
-		len += sprintf(&page[len], "\neth%d: '0'=empty '1'=filled\n",
-				ld->index);
+		seq_printf(m, "\neth%d: '0'=empty '1'=filled\n", ld->index);
 		for (j = 0; j < ld->rx_fq.count; j++) {
-			len += sprintf(&page[len], "%s", ld->rx_fq.skb[j] ?
-					"1" : "0");
+			seq_printf(m, "%s", ld->rx_fq.skb[j] ? "1" : "0");
 			if ((j + 1) % 100 == 0)
-				len += sprintf(&page[len], "\n");
+				seq_puts(m, "\n");
 		}
-		len += sprintf(&page[len], "\n");
+		seq_puts(m, "\n");
 	}
 
-	return len;
+	return 0;
 }
 
-static int debug_level_proc_write(struct file *file, const char __user *buf,
-				  unsigned long count, void *data)
+static ssize_t debug_level_proc_write(struct file *file, const char __user *buf,
+				  size_t count, loff_t *pos)
 {
 	struct higmac_adapter *adapter = get_adapter();
 	char line[8];
@@ -298,36 +280,75 @@ static int debug_level_proc_write(struct file *file, const char __user *buf,
 	if (ret)
 		return -EFAULT;
 
-	adapter->debug_level = simple_strtoul(line, NULL, 0);
+	ret = kstrtoul(&line[0], 0, (unsigned long *)&(adapter->debug_level));
+	if (ret)
+		return -EFAULT;
 
-	return count;
+	return (ssize_t)count;
 }
 
 static struct proc_dir_entry *higmac_proc_root;
 
+#define proc_open(name)	\
+static int proc_open_##name(struct inode *inode, struct file *file) \
+{ \
+	return single_open(file, name, PDE_DATA(inode)); \
+} \
+
+proc_open(hw_states_read);
+proc_open(hw_fwd_mac_tbl_read);
+proc_open(work_mode_proc_read);
+proc_open(fwd_proc_read);
+proc_open(debug_level_proc_read);
+
 static struct proc_file {
 	char *name;
-	read_proc_t *read;
-	write_proc_t *write;
+	const struct file_operations ops;
+
 } proc_file[] = {
 	{
 		.name = "hw_stats",
-		.read = hw_states_read,
+		.ops = {
+			.open           = proc_open_hw_states_read,
+			.read           = seq_read,
+			.llseek         = seq_lseek,
+			.release        = single_release,
+		},
 	}, {
 		.name = "hw_fwd_mac_tbl",
-		.read = hw_fwd_mac_tbl_read,
+		.ops = {
+			.open           = proc_open_hw_fwd_mac_tbl_read,
+			.read           = seq_read,
+			.llseek         = seq_lseek,
+			.release        = single_release,
+		},
 	}, {
 		.name = "work_mode",
-		.read = work_mode_proc_read,
-		.write = work_mode_proc_write,
+		.ops = {
+			.open           = proc_open_work_mode_proc_read,
+			.read           = seq_read,
+			.llseek         = seq_lseek,
+			.release        = single_release,
+			.write		= work_mode_proc_write,
+		},
 	}, {
 		.name = "force_forwarding",
-		.read = fwd_proc_read,
-		.write = fwd_proc_write,
+		.ops = {
+			.open           = proc_open_fwd_proc_read,
+			.read           = seq_read,
+			.llseek         = seq_lseek,
+			.release        = single_release,
+			.write		= fwd_proc_write,
+		},
 	}, {
 		.name = "debug_info",
-		.read = debug_level_proc_read,
-		.write = debug_level_proc_write,
+		.ops = {
+			.open           = proc_open_debug_level_proc_read,
+			.read           = seq_read,
+			.llseek         = seq_lseek,
+			.release        = single_release,
+			.write		= debug_level_proc_write,
+		}
 	}
 };
 
@@ -349,15 +370,8 @@ void higmac_proc_create(void)
 		return;
 
 	for (i = 0; i < ARRAY_SIZE(proc_file); i++) {
-		entry = create_proc_entry(proc_file[i].name, 0,
-					  higmac_proc_root);
-		if (entry) {
-			entry->read_proc = proc_file[i].read;
-			entry->write_proc = proc_file[i].write;
-			entry->data = NULL;
-		} else
-			pr_err("Cann't create proc file:%s!\n",
-			       proc_file[i].name);
+		entry = proc_create(proc_file[i].name, 0,
+					  higmac_proc_root, &proc_file[i].ops);
 	}
 }
 

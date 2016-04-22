@@ -11,8 +11,9 @@
 #include <asm/system.h>
 #include <asm/unaligned.h>
 #include <mach/cpu-info.h>
+#include <mach/hardware.h>
 
-#define PERI_CRG46                      IO_ADDRESS(0xF8A22000 + 0xb8)
+#define PERI_CRG46                      __io_address(0xF8A22000 + 0xb8)
 #define USB2_BUS_CKEN                   (1<<0)
 #define USB2_OHCI48M_CKEN               (1<<1)
 #define USB2_OHCI12M_CKEN               (1<<2)
@@ -31,7 +32,7 @@
 #define USB2_ADP_SRST_REQ               (1<<18)
 
 
-#define PERI_CRG47                      IO_ADDRESS(0xF8A22000 + 0xbc)
+#define PERI_CRG47                      __io_address(0xF8A22000 + 0xbc)
 #define USB_PHY0_REF_CKEN               (1 << 0)
 #define USB_PHY1_REF_CKEN               (1 << 1)
 #define USB_PHY2_REF_CKEN               (1 << 2)
@@ -46,7 +47,7 @@
 #define USB_PHY2_REFCLK_SEL             (1 << 18)
 
 
-#define PERI_USB0                       IO_ADDRESS(0xF8A20000 + 0x120)
+#define PERI_USB0                       __io_address(0xF8A20000 + 0x120)
 #define WORDINTERFACE                   (1 << 0)
 #define ULPI_BYPASS_EN_PORT0            (1 << 3)
 #define ULPI_BYPASS_EN_PORT1_2          (1 << 4)
@@ -55,13 +56,13 @@
 #define SS_BURST16_EN                   (1 << 9)
 #define DWC_OTG_EN                      (1 << 28)
 
-#define PERI_USB1                       IO_ADDRESS(0xF8A20000 + 0x124)
+#define PERI_USB1                       __io_address(0xF8A20000 + 0x124)
 #define PHY0_TXPREEMPAMPTUNE_MASK       ~(0x3 << 27)
 #define PHY0_TXPREEMPAMPTUNE_VALUE      (0x3 << 27)
 #define PHY0_SIDDQ_MASK                 ~(0x1 << 22)
 #define PHY0_SIDDQ_VALUE                (0x1 << 22)
 
-#define PERI_USB2                       IO_ADDRESS(0xF8A20000 + 0x128)
+#define PERI_USB2                       __io_address(0xF8A20000 + 0x128)
 #define PHY3_TXPREEMPAMPTUNE_MASK       ~(0x3 << 27)
 #define PHY3_TXPREEMPAMPTUNE_VALUE      (0x3 << 27)
 #define PHY3_TXVREFTUNE_MASK            ~(0xF << 0)
@@ -69,7 +70,7 @@
 #define PHY3_SIDDQ_MASK                 ~(0x1 << 22)
 #define PHY3_SIDDQ_VALUE                (0x1 << 22)
 
-#define PERI_USB4                       IO_ADDRESS(0xF8A20000 + 0x130)
+#define PERI_USB4                       __io_address(0xF8A20000 + 0x130)
 #define PHY2_TXPREEMPAMPTUNE_MASK       ~(0x3 << 27)
 #define PHY2_TXPREEMPAMPTUNE_VALUE      (0x3 << 27)
 #define PHY2_TXVREFTUNE_MASK            ~(0xF << 0)
@@ -92,6 +93,20 @@ void hiusb_start_hcd(void)
 
 		int reg;
 
+		/* power down phy for eye diagram */
+		reg = readl(PERI_USB1);
+		reg |= PHY0_SIDDQ_VALUE;     
+		writel(reg, PERI_USB1);
+		
+		reg = readl(PERI_USB2);
+		reg |= PHY3_SIDDQ_VALUE;    
+		writel(reg, PERI_USB2);
+		
+		reg = readl(PERI_USB4);
+		reg |= PHY2_SIDDQ_VALUE;   
+		writel(reg, PERI_USB4);
+		udelay(2000);
+		
 		/* reset enable */
 		reg = readl(PERI_CRG46);
 		reg |= (USB2_BUS_SRST_REQ
@@ -130,7 +145,9 @@ void hiusb_start_hcd(void)
 		writel(reg, PERI_USB0);
 		udelay(100);
 #endif
-
+		/* for ssk usb storage ok */
+		msleep(10);
+		
 		/* cancel power on reset */
 		reg = readl(PERI_CRG47);
 		reg &= ~(USB_PHY0_SRST_REQ
@@ -138,6 +155,43 @@ void hiusb_start_hcd(void)
 			| USB_PHY2_SRST_REQ);
 		writel(reg , PERI_CRG47);
 		udelay(300);
+
+		if ((_HI3719MV100 == get_chipid()) || (_HI3718MV100 == get_chipid())) {
+			/* 1. address 0x07, send data 0x3b */
+			writel(0xa73b, PERI_USB1);
+			writel(0xe73b, PERI_USB1);
+			writel(0xa73b, PERI_USB1);
+			udelay(500);
+
+			/*
+			 * >=1us later
+			 * 2. address 0x0b, send data 0xc0
+			 */
+			writel(0xabc0, PERI_USB1);
+			writel(0xebc0, PERI_USB1);
+			writel(0xabc0, PERI_USB1);
+			udelay(500);
+
+			/*
+			 * >=50us later
+			 * 3. address 0x07, send data 0x3f
+			 */
+			writel(0xa73f, PERI_USB1);
+			writel(0xe73f, PERI_USB1);
+			writel(0xa73f, PERI_USB1);
+			udelay(500);
+			udelay(500);
+
+			/*
+			 * >=1ms later
+			 * 4. address 0x0b, send data 0xe0
+			 */
+			writel(0xabe0, PERI_USB1);
+			writel(0xebe0, PERI_USB1);
+			writel(0xabe0, PERI_USB1);
+			udelay(500);
+			udelay(500);
+		}
 
 		/* cancel port reset */
 		reg = readl(PERI_CRG47);
@@ -180,6 +234,11 @@ void hiusb_start_hcd(void)
 		writel(reg, PERI_CRG46);
 		udelay(200);
 
+		/* Hi3719MV100 and Hi3718MV100 need not set PERI_USB1/2/4 */
+		if ((_HI3719MV100 == get_chipid()) || (_HI3718MV100 == get_chipid())) {
+			goto out;
+		}
+
 		reg = readl(PERI_USB1);
 		if (_HI3716CV200ES == get_chipid()) {
 			reg &= PHY0_TXPREEMPAMPTUNE_MASK;
@@ -187,7 +246,7 @@ void hiusb_start_hcd(void)
 		}
 		reg &= PHY0_SIDDQ_MASK;
 		reg &= ~PHY0_SIDDQ_VALUE;
-		writel(reg, PERI_USB1);	
+		writel(reg, PERI_USB1);
 		udelay(200);
 
 		reg = readl(PERI_USB2);
@@ -197,7 +256,7 @@ void hiusb_start_hcd(void)
 		}
 		reg &= PHY3_SIDDQ_MASK;
 		reg &= ~PHY3_SIDDQ_VALUE;
-		writel(reg, PERI_USB2);	
+		writel(reg, PERI_USB2);
 		udelay(200);
 
 		if (_HI3716CV200ES == get_chipid()) {
@@ -223,11 +282,12 @@ void hiusb_start_hcd(void)
 			reg = readl(PERI_USB4);
 			reg &= PHY0_SIDDQ_MASK;
 			reg &= ~PHY0_SIDDQ_VALUE;
-			writel(reg, PERI_USB4);	
+			writel(reg, PERI_USB4);
 			udelay(200);
 		}
 
 	}
+out:
 	local_irq_restore(flags);
 }
 

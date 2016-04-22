@@ -151,13 +151,13 @@ int hisfc350_dma_read(struct hisfc_host *host,
 	struct hisfc_spi *spi = host->spi;
 
 	if ((unsigned long long)(from + len) > prt_size) {
-		PR_WARN("read area out of range.\n");
+		pr_warn("read area out of range.\n");
 		return -EINVAL;
 	}
 
 	*retlen = 0;
 	if (!len) {
-		PR_WARN("read length is 0.\n");
+		pr_warn("read length is 0.\n");
 		return 0;
 	}
 
@@ -173,7 +173,7 @@ int hisfc350_dma_read(struct hisfc_host *host,
 			from -= spi->chipsize;
 			spi++;
 			if (!spi->name)
-				PR_BUG("write memory out of range.\n");
+				hisfc_pr_bug("write memory out of range.\n");
 			if (spi->driver->wait_ready(spi))
 				goto fail;
 			spi->driver->bus_prepare(spi, READ);
@@ -192,7 +192,7 @@ int hisfc350_dma_read(struct hisfc_host *host,
 			from -= spi->chipsize;
 			spi++;
 			if (!spi->name)
-				PR_BUG("read memory out of range.\n");
+				hisfc_pr_bug("read memory out of range.\n");
 			if (spi->driver->wait_ready(spi))
 				goto fail;
 			spi->driver->bus_prepare(spi, READ);
@@ -303,13 +303,13 @@ int hisfc350_dma_write(struct hisfc_host *host,
 	struct hisfc_spi *spi = host->spi;
 
 	if ((unsigned long long)(to + len) > prt_size) {
-		PR_WARN("write data out of range.\n");
+		pr_warn("write data out of range.\n");
 		return -EINVAL;
 	}
 
 	*retlen = 0;
 	if (!len) {
-		PR_WARN("write length is 0.\n");
+		pr_warn("write length is 0.\n");
 		return 0;
 	}
 
@@ -327,7 +327,7 @@ int hisfc350_dma_write(struct hisfc_host *host,
 			to -= spi->chipsize;
 			spi++;
 			if (!spi->name)
-				PR_BUG("write memory out of range.\n");
+				hisfc_pr_bug("write memory out of range.\n");
 			if (spi->driver->wait_ready(spi))
 				goto fail;
 			spi->driver->write_enable(spi);
@@ -350,7 +350,7 @@ int hisfc350_dma_write(struct hisfc_host *host,
 			to -= spi->chipsize;
 			spi++;
 			if (!spi->name)
-				PR_BUG("write memory out of range.\n");
+				hisfc_pr_bug("write memory out of range.\n");
 			if (spi->driver->wait_ready(spi))
 				goto fail;
 			spi->driver->write_enable(spi);
@@ -383,17 +383,17 @@ int hisfc350_reg_erase(struct hisfc_host *host,
 	struct hisfc_spi *spi = host->spi;
 
 	if (offset + length > prt_size) {
-		PR_WARN("erase area out of range of mtd.\n");
+		pr_warn("erase area out of range of mtd.\n");
 		return -EINVAL;
 	}
 
 	if ((unsigned int)offset & (host->erasesize-1)) {
-		PR_WARN("erase start address is not alignment.\n");
+		pr_warn("erase start address is not alignment.\n");
 		return -EINVAL;
 	}
 
 	if ((unsigned int)length & (host->erasesize-1)) {
-		PR_WARN("erase length is not alignment.\n");
+		pr_warn("erase length is not alignment.\n");
 		return -EINVAL;
 	}
 
@@ -402,7 +402,7 @@ int hisfc350_reg_erase(struct hisfc_host *host,
 			offset -= spi->chipsize;
 			spi++;
 			if (!spi->name)
-				PR_BUG("erase memory out of range.\n");
+				hisfc_pr_bug("erase memory out of range.\n");
 		}
 		if (hisfc350_reg_erase_one_block(host, spi, offset)) {
 			mutex_unlock(&host->lock);
@@ -454,31 +454,77 @@ static int hisfc350_controller_spi_init(struct hisfc_spi *spi, int offset)
 
 static void hisfc350_show_spi(struct hisfc_spi *spi)
 {
-	char buf[20];
+#define MAX_PRINT_BUFFER          1024
+	char tmp[20];
+	char *ptr, *str;
+	int size, num;
 
-	PR_MSG("Spi(cs%d): ", spi->chipselect);
-	PR_MSG("Block:%sB ", ultohstr((unsigned long long)spi->erasesize,
-		buf, sizeof(buf)));
-	PR_MSG("Chip:%sB ", ultohstr(spi->chipsize, buf, sizeof(buf)));
-	PR_MSG("Name:\"%s\"\n", spi->name);
+	str = (char *)kmalloc(MAX_PRINT_BUFFER, GFP_KERNEL);
+	if (!str) {
+		pr_err("Can't malloc memory.\n");
+		return;
+	}
+
+	ptr = str;
+	size = MAX_PRINT_BUFFER;
+
+	num = snprintf(ptr, size, "Spi(cs%d): ", spi->chipselect);
+	ptr += num;
+	size -= num;
+
+	ultohstr((u64)spi->erasesize, tmp, sizeof(tmp));
+	num = snprintf(ptr, size, "Block:%s ", tmp);
+	ptr += num;
+	size -= num;
+
+	ultohstr(spi->chipsize, tmp, sizeof(tmp));
+	num = snprintf(ptr, size, "Chip:%s ", tmp);
+	ptr += num;
+	size -= num;
+
+	num = snprintf(ptr, size, "Name:\"%s\"\n", spi->name);
+
+	pr_info("%s", str);
+
 
 #ifdef CONFIG_HISFC350_SHOW_CYCLE_TIMING
-	PR_MSG("Spi(cs%d): ", spi->chipselect);
-	if (spi->addrcycle == 4)
-		PR_MSG("4 addrcycle ");
-	PR_MSG("read:%s,%02X,%s ",
-		hisfc350_get_ifcycle_str(spi->read->iftype),
-		spi->read->cmd,
-		hisfc350_get_clock_str(spi->read->clock));
-	PR_MSG("write:%s,%02X,%s ",
-		hisfc350_get_ifcycle_str(spi->write->iftype),
-		spi->write->cmd,
-		hisfc350_get_clock_str(spi->write->clock));
-	PR_MSG("erase:%s,%02X,%s\n",
-		hisfc350_get_ifcycle_str(spi->erase->iftype),
-		spi->erase->cmd,
-		hisfc350_get_clock_str(spi->erase->clock));
+
+	ptr = str;
+	size = MAX_PRINT_BUFFER;
+
+	num = snprintf(ptr, size, "Spi(cs%d): ", spi->chipselect);
+	ptr += num;
+	size -= num;
+
+	num = snprintf(ptr, size, "Spi(cs%d): ", spi->chipselect);
+	ptr += num;
+	size -= num;
+
+	num = snprintf(ptr, size, "read:%s,%02X,%s ",
+		       hisfc350_get_ifcycle_str(spi->read->iftype),
+		       spi->read->cmd,
+		       hisfc350_get_clock_str(spi->read->clock));
+	ptr += num;
+	size -= num;
+
+	num = snprintf(ptr, size, "write:%s,%02X,%s ",
+		       hisfc350_get_ifcycle_str(spi->write->iftype),
+		       spi->write->cmd,
+		       hisfc350_get_clock_str(spi->write->clock));
+	ptr += num;
+	size -= num;
+
+	num = snprintf(ptr, size, "erase:%s,%02X,%s\n",
+		       hisfc350_get_ifcycle_str(spi->erase->iftype),
+		       spi->erase->cmd,
+		       hisfc350_get_clock_str(spi->erase->clock));
+
+	pr_info("%s", str);
+
 #endif /* CONFIG_HISFC350_SHOW_CYCLE_TIMING */
+
+	kfree(str);
+#undef MAX_PRINT_BUFFER
 }
 /*****************************************************************************/
 
@@ -500,16 +546,14 @@ static int hisfc350_spi_probe(struct hisfc_host *host)
 			|| ((ids[0] & ids[1] & ids[2]) == 0xFF))
 			continue;
 
-		PR_MSG("Spi(cs%d) ID: 0x%02X 0x%02X 0x%02X"
-			" 0x%02X 0x%02X 0x%02X\n",
+		pr_info("Spi(cs%d) ID: 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X\n",
 			chipselect,
 			ids[0], ids[1], ids[2], ids[3], ids[4], ids[5]);
 
 		spiinfo = spi_serach_ids(hisfc350_spi_info_table, ids);
 
 		if (!spiinfo) {
-			PR_MSG("Spi(cs%d): find unrecognized spi flash.\n",
-				chipselect);
+			pr_warn("find unrecognized spi flash.\n");
 			continue;
 		}
 

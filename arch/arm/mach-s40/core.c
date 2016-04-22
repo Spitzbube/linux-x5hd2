@@ -13,10 +13,7 @@
 #include <linux/clkdev.h>
 #include <asm/system.h>
 #include <asm/irq.h>
-#include <asm/leds.h>
 #include <asm/hardware/arm_timer.h>
-#include <asm/hardware/gic.h>
-#include <asm/hardware/vic.h>
 #include <asm/mach-types.h>
 
 #include <asm/mach/arch.h>
@@ -28,55 +25,45 @@
 #include <mach/hardware.h>
 #include <mach/early-debug.h>
 #include <mach/irqs.h>
+#include <linux/irqchip/arm-gic.h>
 #include "mach/clock.h"
 
 #include <linux/bootmem.h>
 #include <mach/cpu-info.h>
 #include <linux/delay.h>
-#include <asm/hardware/cache-l2x0.h>
 #include <asm/smp_twd.h>
 #include <linux/memblock.h>
 #include <linux/tags.h>
 
-#ifdef CONFIG_PM
-extern unsigned long hi_pm_phybase;
-extern unsigned long hi_pm_ddrbase;
-#endif
+#include "platsmp.h"
+#include <mach/cpu.h>
 
 #ifdef CONFIG_CMA
 extern int hisi_declare_heap_memory(void);
 #endif
 
-#ifdef CONFIG_ION_CMA
-extern int hisi_declare_ion_memory(void);
-extern int hisi_register_ion_device(void);
-#endif
+void __iomem *s40_gic_cpu_base_addr = IOMEM(CFG_GIC_CPU_BASE);
 
-#ifdef CONFIG_SUPPORT_SRAM_MANAGER
-extern int init_sram_manager(void);
-#endif
-
-extern void arch_cpu_init(void);
-
-void __iomem *s40_gic_cpu_base_addr;
+/*****************************************************************************/
 
 void __init s40_gic_init_irq(void)
 {
 	edb_trace();
-	s40_gic_cpu_base_addr = (void __iomem *)CFG_GIC_CPU_BASE;
 
 #ifndef CONFIG_LOCAL_TIMERS
-	gic_init(0, HISI_GIC_IRQ_START, (void __iomem *)
-		 CFG_GIC_DIST_BASE, s40_gic_cpu_base_addr);
+	gic_init(0, HISI_GIC_IRQ_START, IOMEM(CFG_GIC_DIST_BASE),
+		 IOMEM(CFG_GIC_CPU_BASE));
 #else
-	/* git initialed include Local timer.
-	* IRQ_LOCALTIMER is settled IRQ number for local timer interrupt.
-	* It is set to 29 by ARM.
-	*/
-	gic_init(0, IRQ_LOCALTIMER, (void __iomem *)CFG_GIC_DIST_BASE,
-		 (void __iomem *)CFG_GIC_CPU_BASE);
+	/*
+	 * git initialed include Local timer.
+	 * IRQ_LOCALTIMER is settled IRQ number for local timer interrupt.
+	 * It is set to 29 by ARM.
+	 */
+	gic_init(0, IRQ_LOCALTIMER, IOMEM(CFG_GIC_DIST_BASE),
+		 IOMEM(CFG_GIC_CPU_BASE));
 #endif
 }
+/*****************************************************************************/
 
 static struct map_desc s40_io_desc[] __initdata = {
 	/* S40_IOCH1 */
@@ -87,7 +74,7 @@ static struct map_desc s40_io_desc[] __initdata = {
 		.type		= MT_DEVICE
 	},
 };
-
+/*****************************************************************************/
 /*
  * pdm_tag format:
  * version=1.0.0.0 baseparam=0x86000000,0x1000 logdata=0x870000000,0x2000
@@ -167,6 +154,32 @@ error:
 #undef EQUAL_MARK
 }
 
+/*release reserve memory*/
+int pdm_free_reserve_mem(u32 phyaddr, u32 size)
+{
+	u32  pfn_start;
+	u32  pfn_end;
+	u32  pages = 0;
+
+	pfn_start = __phys_to_pfn(phyaddr);
+	pfn_end   = __phys_to_pfn(phyaddr + size);
+
+	for (; pfn_start < pfn_end; pfn_start++) {
+		struct page *page = pfn_to_page(pfn_start);
+		ClearPageReserved(page);
+		init_page_count(page);
+		__free_page(page);
+		pages++;
+	}
+
+	totalram_pages += pages;
+
+	return 0;
+}
+EXPORT_SYMBOL(pdm_free_reserve_mem);
+
+/*****************************************************************************/
+
 void __init s40_map_io(void)
 {
 	int i;
@@ -210,6 +223,12 @@ HIL_AMBA_DEVICE(uart2, "uart:2",  UART2,    NULL);
 HIL_AMBA_DEVICE(uart3, "uart:3",  UART3,    NULL);
 HIL_AMBA_DEVICE(uart4, "uart:4",  UART4,    NULL);
 
+static struct amba_device *amba_devs_hi3719mv100[] __initdata = {
+	&HIL_AMBADEV_NAME(uart0),
+	&HIL_AMBADEV_NAME(uart1),
+	&HIL_AMBADEV_NAME(uart2),
+};
+
 static struct amba_device *amba_devs[] __initdata = {
 	&HIL_AMBADEV_NAME(uart0),
 	&HIL_AMBADEV_NAME(uart1),
@@ -218,10 +237,10 @@ static struct amba_device *amba_devs[] __initdata = {
 	&HIL_AMBADEV_NAME(uart4),
 };
 
+/*****************************************************************************/
 /*
  * These are fixed clocks.
  */
-
 static struct clk sp804_clk = {
 	.rate	= 24000000, /* TODO: XXX */
 };
@@ -232,6 +251,7 @@ static struct clk_lookup lookups[] = {
 		.clk		= &sp804_clk,
 	},
 };
+/*****************************************************************************/
 
 static void __init s40_reserve(void)
 {
@@ -252,9 +272,6 @@ static void __init s40_reserve(void)
 	hisi_declare_heap_memory();
 #endif
 
-#ifdef CONFIG_ION_CMA
-	hisi_declare_ion_memory();
-#endif
 }
 /*****************************************************************************/
 
@@ -263,89 +280,19 @@ void __init s40_init(void)
 	unsigned long i;
 
 	edb_trace();
-
-	for (i = 0; i < ARRAY_SIZE(amba_devs); i++) {
-		edb_trace();
-		amba_device_register(amba_devs[i], &iomem_resource);
+	if ((get_chipid() == _HI3719MV100) || (get_chipid() == _HI3718MV100)) {
+		for (i = 0; i < ARRAY_SIZE(amba_devs_hi3719mv100); i++) {
+			edb_trace();
+			amba_device_register(amba_devs_hi3719mv100[i], &iomem_resource);
+		}
+	} else {
+		for (i = 0; i < ARRAY_SIZE(amba_devs); i++) {
+			edb_trace();
+			amba_device_register(amba_devs[i], &iomem_resource);
+		}
 	}
 
-#ifdef CONFIG_ION_CMA
-	hisi_register_ion_device();
-#endif	
-
-#ifdef CONFIG_SUPPORT_SRAM_MANAGER
-	init_sram_manager();
-#endif
 }
-/*****************************************************************************/
-
-#ifdef CONFIG_CACHE_L2X0
-static int __init l2_cache_init(void)
-{
-	u32 val;
-	void __iomem *l2x0_base = (void __iomem *)IO_ADDRESS(REG_BASE_L2CACHE);
-
-	/*
-	 * Bits  Value Description
-	 * [31]    0 : SBZ
-	 * [30]    1 : Double linefill enable (L3)
-	 * [29]    1 : Instruction prefetching enable
-	 * [28]    1 : Data prefetching enabled
-	 * [27]    0 : Double linefill on WRAP read enabled (L3)
-	 * [26:25] 0 : SBZ
-	 * [24]    1 : Prefetch drop enable (L3)
-	 * [23]    0 : Incr double Linefill enable (L3)
-	 * [22]    0 : SBZ
-	 * [21]    0 : Not same ID on exclusive sequence enable (L3)
-	 * [20:5]  0 : SBZ
-	 * [4:0]   0 : use the Prefetch offset values 0.
-	 */
-	writel_relaxed(0x71000000, l2x0_base + L2X0_PREFETCH_CTRL);
-
-	val = __raw_readl(l2x0_base + L2X0_AUX_CTRL);
-	val |= (1 << 30); /* Early BRESP enabled */
-	val |= (1 << 0);  /* Full Line of Zero Enable */
-	writel_relaxed(val, l2x0_base + L2X0_AUX_CTRL);
-
-#if 0  // TODO: XXX
-	if (get_chipid() == _HI3719Mv100) {
-		unsigned int regval;
-
-		regval = readl_relaxed(l2x0_base + L2X0_TAG_LATENCY_CTRL);
-		regval &=0xfffff888;
-		writel_relaxed(regval, l2x0_base + L2X0_TAG_LATENCY_CTRL);
-
-		regval = readl_relaxed(l2x0_base + L2X0_DATA_LATENCY_CTRL);
-		regval &=0xfffff888;
-		writel_relaxed(regval, l2x0_base + L2X0_DATA_LATENCY_CTRL);
-
-		l2x0_init(l2x0_base, 0x00440000, 0xFFB0FFFF);
-
-	} if (get_chipid() == _HI3716CV200ES) 
-#endif
-
-	l2x0_init(l2x0_base, 0x00450000, 0xFFB0FFFF);
-
-	/*
-	 * 2. enable L2 prefetch hint                  [1]a
-	 * 3. enable write full line of zeros mode.    [3]a
-	 *   a: This feature must be enabled only when the slaves
-	 *      connected on the Cortex-A9 AXI master port support it.
-	 */
-	asm volatile (
-	"	mrc	p15, 0, r0, c1, c0, 1\n"
-	"	orr	r0, r0, #0x02\n"
-	"	mcr	p15, 0, r0, c1, c0, 1\n"
-	  :
-	  :
-	  : "r0", "cc");
-
-	return 0;
-}
-
-early_initcall(l2_cache_init);
-#endif
-
 /*****************************************************************************/
 
 static void __init s40_init_early(void)
@@ -372,34 +319,34 @@ static void __init s40_init_early(void)
 
 void s40_restart(char mode, const char *cmd)
 {
-	mdelay(200);
+	printk(KERN_INFO "CPU will restart.");
 
-	printk(KERN_INFO "Cpu will restart.");
+	mdelay(200);
 
 	local_irq_disable();
 
 	/* unclock wdg */
-	writel(0x1ACCE551,  IO_ADDRESS(REG_BASE_WDG0 + 0xc00));
+	writel(0x1ACCE551,  __io_address(REG_BASE_WDG0 + 0xc00));
 	/* wdg load value */
-	writel(0x00000100,  IO_ADDRESS(REG_BASE_WDG0 + 0x0));
+	writel(0x00000100,  __io_address(REG_BASE_WDG0 + 0x0));
 	/* bit0: int enable bit1: reboot enable */
-	writel(0x00000003,  IO_ADDRESS(REG_BASE_WDG0 + 0x8));
+	writel(0x00000003,  __io_address(REG_BASE_WDG0 + 0x8));
 
 	while (1);
 
 	BUG();
 }
 /*****************************************************************************/
-extern struct sys_timer s40_sys_timer;
+extern void __init s40_timer_init(void);
 
 MACHINE_START(S40, "bigfish")
-	.atag_offset	= 0x100,
-	.map_io		= s40_map_io,
-	.init_early	= s40_init_early,
-	.init_irq	= s40_gic_init_irq,
-	.handle_irq	= gic_handle_irq,
-	.timer		= &s40_sys_timer,
-	.init_machine	= s40_init,
-	.reserve	= s40_reserve,
-	.restart	= s40_restart,
+	.atag_offset  = 0x100,
+	.map_io       = s40_map_io,
+	.init_early   = s40_init_early,
+	.init_irq     = s40_gic_init_irq,
+	.init_time    = s40_timer_init,
+	.init_machine = s40_init,
+	.smp          = smp_ops(s40_smp_ops),
+	.reserve      = s40_reserve,
+	.restart      = s40_restart,
 MACHINE_END

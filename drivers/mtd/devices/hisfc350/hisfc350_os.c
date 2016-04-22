@@ -6,6 +6,8 @@
  *
 ******************************************************************************/
 
+#define pr_fmt(fmt) "spiflash: " fmt
+
 #include <linux/version.h>
 #include <linux/init.h>
 #include <linux/module.h>
@@ -176,14 +178,13 @@ static int hisfc_os_add_paratitions(struct hisfc_host *host)
 	if (nr_parts <= 0)
 		return 0;
 
-	for (ix = 0; ix < nr_parts; ix++) {
-		DBG_MSG("partitions[%d] = {.name = %s, .offset = 0x%.8x, "
-		        ".size = 0x%08x (%uKiB) }\n",
-		        ix, parts[ix].name,
-		        (unsigned int)parts[ix].offset,
-		        (unsigned int)parts[ix].size,
-		        (unsigned int)parts[ix].size/1024);
-	}
+	for (ix = 0; ix < nr_parts; ix++)
+		pr_debug("partitions[%d] = {.name = %s, .offset = 0x%.8x, "
+			 ".size = 0x%08x (%uKiB) }\n",
+			 ix, parts[ix].name,
+			 (unsigned int)parts[ix].offset,
+			 (unsigned int)parts[ix].size,
+			 (unsigned int)parts[ix].size/1024);
 
 	host->add_partition = 1;
 	ret = add_mtd_partitions(host->mtd, parts, nr_parts);
@@ -214,28 +215,28 @@ static int hisfc350_os_driver_probe(struct platform_device * pltdev)
 	host->sysreg = ioremap_nocache(CONFIG_HISFC350_SYSCTRL_ADDRESS,
 		HISFC350_SYSCTRL_LENGTH);
 	if (!host->sysreg) {
-		printk(KERN_ERR "spi system reg ioremap failed.\n");
+		pr_err("spi system reg ioremap failed.\n");
 		goto fail;
 	}
 
 	host->regbase = ioremap_nocache(CONFIG_HISFC350_REG_BASE_ADDRESS,
 		HISFC350_REG_BASE_LEN);
 	if (!host->regbase) {
-		printk(KERN_ERR "spi base reg ioremap failed.\n");
+		pr_err("spi base reg ioremap failed.\n");
 		goto fail;
 	}
 
 	host->iobase = ioremap_nocache(CONFIG_HISFC350_BUFFER_BASE_ADDRESS,
 		HISFC350_BUFFER_BASE_LEN);
 	if (!host->iobase) {
-		printk(KERN_ERR "spi buffer ioremap failed.\n");
+		pr_err("spi buffer ioremap failed.\n");
 		goto fail;
 	}
 
 	host->buffer = dma_alloc_coherent(host->dev, HISFC350_DMA_MAX_SIZE,
 		&host->dma_buffer, GFP_KERNEL);
 	if (host->buffer == NULL) {
-		printk(KERN_ERR "spi alloc dma buffer failed.\n");
+		pr_err("spi alloc dma buffer failed.\n");
 		goto fail;
 	}
 
@@ -328,8 +329,7 @@ static int __init parse_spi_partitions(const struct tag *tag)
 	int i;
 
 	if (tag->hdr.size <= 2) {
-		PR_WARN("%s(%d): tag->hdr.size <= 2\n",
-			__func__, __LINE__);
+		pr_warn("tag->hdr.size <= 2\n");
 		return 0;
 	}
 
@@ -393,16 +393,16 @@ static struct platform_device hisfc350_device_pltdev = {
 
 static int hisfc350_os_version_check(void)
 {
-	void * regbase; 
+	void __iomem *regbase;
 	unsigned long regval;
 
 	regbase = ioremap_nocache(CONFIG_HISFC350_REG_BASE_ADDRESS,
 		HISFC350_REG_BASE_LEN);
 	if (!regbase) {
-		printk(KERN_ERR "spi base reg ioremap failed.\n");
+		pr_err("spi base reg ioremap failed.\n");
 		return -EIO;
 	}
-	regval = readl((unsigned)((char *)regbase + HISFC350_VERSION));
+	regval = readl(regbase + HISFC350_VERSION);
 	iounmap(regbase);
 	return (regval == 0x350);
 }
@@ -412,7 +412,7 @@ static int __init hisfc350_os_module_init(void)
 {
 	int result = 0;
 
-	printk("Check Spi Flash Controller V350. ");
+	printk("spiflash: Check Spi Flash Controller V350. ");
 	if (!hisfc350_os_version_check()) {
 		printk("\n");
 		return -ENODEV;

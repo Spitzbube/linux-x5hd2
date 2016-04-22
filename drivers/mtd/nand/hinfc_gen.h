@@ -7,8 +7,8 @@
  *
 ******************************************************************************/
 
-#ifndef HINFC_COMMONH
-#define HINFC_COMMONH
+#ifndef __HINFC_GEN_H__
+#define __HINFC_GEN_H__
 /******************************************************************************/
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/nand.h>
@@ -25,58 +25,63 @@
 #define HINFC_VER_600                   (0x600)
 #define HINFC_VER_610                   (0x610)
 
-#define _512B                           (512)
-#define _2K                             (2048)
-#define _4K                             (4096)
-#define _8K                             (8192)
-#define _16K                            (16384)
-#define _32K                            (32768)
 /******************************************************************************/
 
-#define NAND_PAGE_SHIFT                      9 /* 512 */
-#define NAND_PAGE_512B                       0
-#define NAND_PAGE_1K                         1
-#define NAND_PAGE_2K                         2
-#define NAND_PAGE_4K                         3
-#define NAND_PAGE_8K                         4
-#define NAND_PAGE_16K                        5
-#define NAND_PAGE_32K                        6
-
 #define NAND_ECC_NONE                        0
-#define NAND_ECC_1BIT                        1
+#define NAND_ECC_1BIT_512                    1
 #define NAND_ECC_4BIT                        2
-#define NAND_ECC_4BYTE                       3
-#define NAND_ECC_8BIT                        4
-#define NAND_ECC_8BYTE                       5
-#define NAND_ECC_13BIT                       6
-#define NAND_ECC_18BIT                       7
-#define NAND_ECC_24BIT                       8
-#define NAND_ECC_27BIT                       9
-#define NAND_ECC_32BIT                       10
-#define NAND_ECC_40BIT                       11
-#define NAND_ECC_41BIT                       12
-#define NAND_ECC_48BIT                       13
-#define NAND_ECC_60BIT                       14
-#define NAND_ECC_72BIT                       15
-#define NAND_ECC_80BIT                       16
+#define NAND_ECC_4BIT_512                    3
+#define NAND_ECC_4BYTE                       4
+#define NAND_ECC_8BIT                        5
+#define NAND_ECC_8BIT_512                    6
+#define NAND_ECC_8BYTE                       7
+#define NAND_ECC_13BIT                       8
+#define NAND_ECC_18BIT                       9
+#define NAND_ECC_24BIT                       10
+#define NAND_ECC_27BIT                       11
+#define NAND_ECC_32BIT                       12
+#define NAND_ECC_40BIT                       13
+#define NAND_ECC_41BIT                       14
+#define NAND_ECC_48BIT                       15
+#define NAND_ECC_60BIT                       16
+#define NAND_ECC_72BIT                       17
+#define NAND_ECC_80BIT                       18
+
+extern char *nand_dbgfs_options;
 
 const char *nand_ecc_name(int type);
 
-const char *nand_page_name(int type);
-
-#define nandpage_type2size(_type) \
-	(1 << (NAND_PAGE_SHIFT + _type))
-
-int nandpage_size2type(int size);
-
-struct nand_config_table {
-	int pagetype;
+struct nand_ctrl_info_t {
+	int pagesize;
 	int ecctype;
 	unsigned int oobsize;
 	struct nand_ecclayout *layout;
 };
 
 struct hinfc_host;
+
+struct nand_sync {
+
+#define SET_NAND_SYNC_TYPE(_mfr, _onfi, _version) \
+	(((_mfr) & 0xFF) << 16) | (((_version) & 0xFF) << 8) | ((_onfi) & 0xFF)
+
+#define GET_NAND_SYNC_TYPE_MFR(_type) (((_type) >> 16) & 0xFF)
+#define GET_NAND_SYNC_TYPE_VER(_type) (((_type) >> 8) & 0xFF)
+#define GET_NAND_SYNC_TYPE_INF(_type) ((_type)& 0xFF)
+
+#define NAND_TYPE_ONFI_23_MICRON    SET_NAND_SYNC_TYPE(NAND_MFR_MICRON, NAND_IS_ONFI, 0x23)
+#define NAND_TYPE_ONFI_30_MICRON    SET_NAND_SYNC_TYPE(NAND_MFR_MICRON, NAND_IS_ONFI, 0x30)
+#define NAND_TYPE_TOGGLE_TOSHIBA    SET_NAND_SYNC_TYPE(NAND_MFR_TOSHIBA, 0, 0)
+#define NAND_TYPE_TOGGLE_SAMSUNG    SET_NAND_SYNC_TYPE(NAND_MFR_SAMSUNG, 0, 0)
+
+#define NAND_TYPE_TOGGLE_10         SET_NAND_SYNC_TYPE(0, 0, 0x10)
+#define NAND_TYPE_ONFI_30           SET_NAND_SYNC_TYPE(0, NAND_IS_ONFI, 0x30)
+#define NAND_TYPE_ONFI_23           SET_NAND_SYNC_TYPE(0, NAND_IS_ONFI, 0x23)
+
+	int type;
+	int (*enable)(struct nand_chip *chip);
+	int (*disable)(struct nand_chip *chip);
+};
 
 struct read_retry_t {
 	int type;
@@ -86,7 +91,16 @@ struct read_retry_t {
 	int (*reset_rr_param)(struct hinfc_host *host);
 };
 
-struct nand_flash_dev_ex {
+struct ecc_info_t {
+	int pagesize;
+	int ecctype;
+	int threshold;
+	int section;
+	void (*dump)(struct hinfc_host *host, unsigned char ecc[],
+		     int *max_bitsflag);
+};
+
+struct nand_dev_t {
 	struct nand_flash_dev flash_dev;
 
 	char *start_type;
@@ -94,12 +108,30 @@ struct nand_flash_dev_ex {
 	int oobsize;
 	int ecctype;
 
-#define NAND_RANDOMIZER                0x01
-#define NAND_HW_AUTO                   0x02
-#define NAND_SYNCHRONOUS               0x04
-#define NAND_ASYNCHRONOUS              0x08
-#define NAND_SYNCHRONOUS_BOOT          0x10
-#define NAND_CONFIG_DONE               0x20
+	/* (Controller) support ecc/page detect, driver don't need detect */
+#define NANDC_HW_AUTO                         0x01
+	/* (Controller) support ecc/page detect, and current ecc/page config finish */
+#define NANDC_CONFIG_DONE                     0x02
+	/* (Controller) is sync, default is async */
+#define NANDC_IS_SYNC_BOOT                    0x04
+
+/* (NAND) need randomizer */
+#define NAND_RANDOMIZER                       0x10
+/* (NAND) is ONFI interface, combine with sync/async symble */
+#define NAND_IS_ONFI                          0x20
+/* (NAND) support async and sync, such micron onfi, toshiba toggle 1.0 */
+#define NAND_MODE_SYNC_ASYNC                  0x40
+/* (NAND) support only sync, such samsung sync. */
+#define NAND_MODE_ONLY_SYNC                   0x80
+
+#define NAND_CHIP_MICRON   (NAND_MODE_SYNC_ASYNC | NAND_IS_ONFI)
+/* This NAND is async, or sync/async, default is async mode, toggle1.0 interface */
+#define NAND_CHIP_TOSHIBA_TOGGLE_10  (NAND_MODE_SYNC_ASYNC)
+/* This NAND is only sync mode, toggle2.0 interface */
+#define NAND_CHIP_TOSHIBA_TOGGLE_20   (NAND_MODE_ONLY_SYNC)
+/* This NAND is only sync mode */
+#define NAND_CHIP_SAMSUNG  (NAND_MODE_ONLY_SYNC)
+
 	int flags;
 
 #define NAND_RR_NONE                   0x00
@@ -112,11 +144,14 @@ struct nand_flash_dev_ex {
 	int read_retry_type;
 };
 
-#define IS_RANDOMIZER(_dev)           ((_dev)->flags & NAND_RANDOMIZER)
-#define IS_HW_AUTO(_dev)              ((_dev)->flags & NAND_HW_AUTO)
-#define IS_SYNCHRONOUS(_dev)          ((_dev)->flags & NAND_SYNCHRONOUS)
-#define IS_CONFIG_DONE(_dev)          ((_dev)->flags & NAND_CONFIG_DONE)
-#define IS_SYNCHRONOUS_BOOT(_dev)     ((_dev)->flags & NAND_SYNCHRONOUS_BOOT)
+#define IS_NANDC_HW_AUTO(_host)         ((_host)->flags & NANDC_HW_AUTO)
+#define IS_NANDC_CONFIG_DONE(_host)     ((_host)->flags & NANDC_CONFIG_DONE)
+#define IS_NANDC_SYNC_BOOT(_host)       ((_host)->flags & NANDC_IS_SYNC_BOOT)
+
+#define IS_NAND_RANDOM(_dev)         ((_dev)->flags & NAND_RANDOMIZER)
+#define IS_NAND_ONLY_SYNC(_dev)      ((_dev)->flags & NAND_MODE_ONLY_SYNC)
+#define IS_NAND_SYNC_ASYNC(_dev)     ((_dev)->flags & NAND_MODE_SYNC_ASYNC)
+#define IS_NAND_ONFI(_dev)           ((_dev)->flags & NAND_IS_ONFI)
 
 #define ERSTR_HARDWARE  "Hardware configuration error. "
 #define ERSTR_DRIVER    "Driver does not support. "
@@ -124,16 +159,25 @@ struct nand_flash_dev_ex {
 #define ENABLE                    1
 #define DISABLE                   0
 
-extern int (*nand_oob_resize)(struct mtd_info *mtd, struct nand_chip *chip,
-	struct nand_flash_dev_ex *flash_dev_ex);
+extern int (*hinfc_param_adjust)(struct mtd_info *, struct nand_chip *, struct nand_dev_t *);
 
-struct nand_flash_dev * nand_get_flash_type_ex(struct mtd_info *mtd,
-	struct nand_chip *chip, struct nand_flash_dev_ex *flash_dev_ex);
+struct nand_flash_dev *hinfc_get_flash_type(struct mtd_info *mtd,
+	struct nand_chip *chip, u8 *id_data, int *busw);
 
-void nand_show_info(struct nand_flash_dev_ex *flash_dev_ex,
-	struct mtd_info *mtd, char *vendor, char *chipname);
+void hinfc_nand_param_adjust(struct mtd_info *mtd, struct nand_chip *chip);
 
-void nand_show_chip(struct nand_chip *chip);
+void hinfc_show_info(struct mtd_info *mtd, char *vendor, char *chipname);
+
+void hinfc_show_chipsize(struct nand_chip *chip);
+
+int get_bits(unsigned int n);
+
+#define hinfc_pr_msg(_fmt, arg...) printk(_fmt, ##arg)
+
+#define hinfc_pr_bug(fmt, args...) do{\
+	printk("%s(%d): bug " fmt, __FILE__, __LINE__, ##args); \
+	while(1); \
+} while (0)
 
 /******************************************************************************/
 #endif /* HINFC_COMMONH */

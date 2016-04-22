@@ -43,16 +43,46 @@ config DEFAULT_UART_BASE_ADDR
 	help
 	  Default UART controller base address
 
-config SUPPORT_CA
-	bool "Support ca"
+config MMZ_PARAM
+	string "MMZ param for CMA and ION"
+	depends on CMA
+	default "ddr,0,0,320M" if MACH_S40
+	help
+	  This is the parameter of mmz memory manager, which now is for CMA 
+	  and ION memory manager.
+
+	  
+config S40_FPGA
+	bool "Enable S40 Fpga config"
+	default y if ARCH_S40
+
+menuconfig SUPPORT_CA
+	bool "Support CA"
 	default n
 	help
 	  If support ca, user privileges will be limit.
 	  select y, support ca, otherwise not support ca.
 
-config S40_FPGA
-	bool "Enable S40 Fpga config"
-	default y if ARCH_S40
+config CA_RUNTIME_CHECK
+	bool "Support CA runtime check"
+	depends on SUPPORT_CA
+	default n
+	help
+	  support ca runtime check feature
+
+config CA_WARKUP_CHECK
+	bool "Support CA wakeup ddr check"
+	depends on SUPPORT_CA
+	default n
+	help
+	  support ca suspend get hash value, and wakeup check ddr.
+
+config CA_SUPPORT_ADVCA
+	bool "Support advca"
+	depends on SUPPORT_CA
+	default n
+	help
+	  support advca, which is the real CA.
 
 menuconfig SUPPORT_DSP_RUN_MEM
 	bool "Support DSP run memory"
@@ -74,5 +104,25 @@ config DSP_RUN_MEM_SIZE
 	help
 	  The size of DSP run memory.
 
-endmenu
+menuconfig SUPPORT_SRAM_MANAGER
+	bool "SRAM manager suppport"
+	default n
+	select GENERIC_ALLOCATOR
+	help
+	  If say y, SRAM manager is supported
 
+config SRAM_PHYS_START
+	hex "SRAM physical address"
+	default "0xFFFF2800"
+	depends on SUPPORT_SRAM_MANAGER
+	help
+	  SRAM physical address
+
+config SRAM_PHYS_SIZE
+	hex "SRAM size"
+	default "0x00002800"
+	depends on SUPPORT_SRAM_MANAGER
+	help
+	  SRAM size
+
+endmenu

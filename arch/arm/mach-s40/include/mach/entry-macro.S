@@ -5,7 +5,7 @@
 .endm
 
 .macro  get_irqnr_preamble, base, tmp
-ldr	\base, =s40_gic_cpu_base_addr
+ldr	\base, = s40_gic_cpu_base_addr
 ldr	\base, [\base]
 .endm
 

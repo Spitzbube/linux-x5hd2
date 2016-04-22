@@ -20,7 +20,9 @@
 #include <linux/err.h>
 #include <linux/cmdline-parser.h>
 
+#ifdef CONFIG_MTD_PART_CHANGE
 extern int mtd_part_change(struct cmdline_parts *parts);
+#endif
 extern int cmdline_parts_setup(char *s);
 /*****************************************************************************/
 
@@ -56,20 +58,23 @@ static int block_part_change(struct cmdline_parts *parts, char *cmdline,
 	return ret;
 }
 
-static void parts_table_change(struct cmdline_parts *parts, char *cmdline,
+static int parts_table_change(struct cmdline_parts *parts, char *cmdline,
 			       int length)
 {
-	int ret;
+	int ret = -ENODEV;
 
 	for (; parts; parts = parts->next_parts) {
+#ifdef CONFIG_MTD_PART_CHANGE
 		ret = mtd_part_change(parts);
 		if (ret != -ENODEV)
 			continue;
-
+#endif
 		ret = block_part_change(parts, cmdline, length);
 		if (ret != -ENODEV)
 			continue;
 	}
+
+	return ret;
 }
 
 static ssize_t parts_proc_write(struct file *file, const char __user * buf,
@@ -94,11 +99,11 @@ static ssize_t parts_proc_write(struct file *file, const char __user * buf,
 	cmdline[size] = 0;
 
 	if (!cmdline_parts_parse(&parts, cmdline)) {
-		parts_table_change(parts, cmdline, size + 1);
+		ret = parts_table_change(parts, cmdline, size + 1);
+		if (!ret)
+			ret = size;
 		cmdline_parts_free(&parts);
 	}
-
-	ret = size;
 
 done:
 	free_page((unsigned long)cmdline);

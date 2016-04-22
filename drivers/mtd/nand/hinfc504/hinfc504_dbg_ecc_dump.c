@@ -142,12 +142,12 @@ static struct hinfc504_ecc_inf_t hinfc504_ecc_inf[] = {
 	{8192, NAND_ECC_24BIT, 8, hinfc504_ecc_8k24b},
 
 	{4096, NAND_ECC_24BIT, 4, hinfc504_ecc_4k24b},
-	{4096, NAND_ECC_4BIT,  4, hinfc504_ecc_4k4b},
-	{4096, NAND_ECC_1BIT, 16, hinfc504_ecc_4k1b},
+	{4096, NAND_ECC_4BIT_512,  4, hinfc504_ecc_4k4b},
+	{4096, NAND_ECC_1BIT_512, 16, hinfc504_ecc_4k1b},
 
 	{2048, NAND_ECC_24BIT, 2, hinfc504_ecc_2k24b},
-	{2048, NAND_ECC_4BIT,  2, hinfc504_ecc_2k4b},
-	{2048, NAND_ECC_1BIT,  8, hinfc504_ecc_2k1b},
+	{2048, NAND_ECC_4BIT_512,  2, hinfc504_ecc_2k4b},
+	{2048, NAND_ECC_1BIT_512,  8, hinfc504_ecc_2k1b},
 	{0, 0, 0},
 };
 /*****************************************************************************/
@@ -160,12 +160,12 @@ static struct hinfc504_ecc_inf_t hinfc600_ecc_inf[] = {
 	{8192, NAND_ECC_24BIT,  8, hinfc600_ecc_8k},
 
 	{4096, NAND_ECC_24BIT,  4, hinfc600_ecc_4k},
-	{4096, NAND_ECC_4BIT,   4, hinfc600_ecc_4k},
-	{4096, NAND_ECC_1BIT,   4, hinfc600_ecc_4k},
+	{4096, NAND_ECC_4BIT_512,   4, hinfc600_ecc_4k},
+	{4096, NAND_ECC_1BIT_512,   4, hinfc600_ecc_4k},
 
 	{2048, NAND_ECC_24BIT,  2, hinfc600_ecc_2k},
-	{2048, NAND_ECC_4BIT,   2, hinfc600_ecc_2k},
-	{2048, NAND_ECC_1BIT,   2, hinfc600_ecc_2k},
+	{2048, NAND_ECC_4BIT_512,   2, hinfc600_ecc_2k},
+	{2048, NAND_ECC_1BIT_512,   2, hinfc600_ecc_2k},
 	{0, 0, 0},
 };
 /*****************************************************************************/

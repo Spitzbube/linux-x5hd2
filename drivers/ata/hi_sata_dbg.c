@@ -2,6 +2,7 @@
 #include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/libata.h>
+#include <mach/hardware.h>
 #include "ahci.h"
 #include "hi_sata_dbg.h"
 
@@ -32,7 +33,7 @@ void hi_ahci_reg_dump(void)
 	for (ix = 0; ix <= 0x28; ix += 0x04) {
 		if (!(ix & 0x0F))
 			printk("\n0x%08X: ", (regbase + ix));
-		printk("%08X ", readl(IO_ADDRESS(regbase + ix)));
+		printk("%08X ", readl(__io_address(regbase + ix)));
 	}
 	printk("\n");
 
@@ -41,7 +42,7 @@ void hi_ahci_reg_dump(void)
 	for (ix = 0; ix <= 0x7F; ix += 0x04) {
 		if (!(ix & 0x0F))
 			printk("\n0x%08X: ", (regbase + ix));
-		printk("%08X ", readl(IO_ADDRESS(regbase + ix)));
+		printk("%08X ", readl(__io_address(regbase + ix)));
 	}
 	printk("\n");
 }
@@ -52,10 +53,9 @@ void hi_ahci_rx_fis_dump(struct ata_link *link, int pmp_port_num)
 	struct ahci_port_priv *pp = NULL;
 
 	pp = link->ap->private_data;
-    if ( NULL == pp)
-    {
-        printk("Error: pp=NULL\n");
-        return;
+	if ( NULL == pp) {
+		printk("Error: pp=NULL\n");
+		return;
 	}
 	printk("ACHI Received FIS:");
 	hi_sata_phys_mem_dump((unsigned int)(pp->rx_fis_dma), AHCI_RX_FIS_SZ * pmp_port_num);
@@ -65,11 +65,10 @@ EXPORT_SYMBOL_GPL(hi_ahci_rx_fis_dump);
 
 void hi_ata_taskfile_dump(struct ata_taskfile *tf)
 {
-    if (NULL == tf)
-    {
-        printk("Error: tf=NULL\n");    
-        return;
-    }
+	if (NULL == tf) {
+		printk("Error: tf=NULL\n");
+		return;
+	}
 	printk("Taskfile dump:\n");
 	printk("flags:0x%08lX, protocol:0x%02X, command:0x%02X, device:0x%02X, ctl:0x%02X\n",
 		tf->flags, tf->protocol, tf->command, tf->device, tf->ctl);	
@@ -137,16 +136,16 @@ void hi_ahci_st_dump(void __iomem *port_base)
 
 	printk("**********CMD header**********\n");
 	tmp = readl(port_base + 0x0);
-        __hi_ahci_st_md(phys_to_virt(tmp));
-        __hi_ahci_st_md(phys_to_virt(tmp+0x100));
-        __hi_ahci_st_md(phys_to_virt(tmp+0x200));
-        __hi_ahci_st_md(phys_to_virt(tmp+0x300));
-#if 0        
-   for(tmp = 0;tmp < DUMP_LENTH;tmp++){
-       printk("----[*cmh ops: %8x  table addr: %8x]----\n",p_dump_cmd_info[tmp].opts,p_dump_cmd_info[tmp].tbl_addr);
-       printk("---[*cmd talbe:{%8x} {%8x} {%8x} {%8x} {%8x}]---\n",p_dump_cmd_info[tmp].tab_addr[0],p_dump_cmd_info[tmp].tab_addr[1],p_dump_cmd_info[tmp].tab_addr[2],p_dump_cmd_info[tmp].tab_addr[3],p_dump_cmd_info[tmp].tab_addr[4]);
-       printk("*************dump_count = %d*********************\n",p_dump_cmd_info[tmp].dump_count);
-   }
+	__hi_ahci_st_md(phys_to_virt(tmp));
+	__hi_ahci_st_md(phys_to_virt(tmp+0x100));
+	__hi_ahci_st_md(phys_to_virt(tmp+0x200));
+	__hi_ahci_st_md(phys_to_virt(tmp+0x300));
+#if 0
+	for(tmp = 0;tmp < DUMP_LENTH;tmp++){
+		printk("----[*cmh ops: %8x  table addr: %8x]----\n",p_dump_cmd_info[tmp].opts,p_dump_cmd_info[tmp].tbl_addr);
+		printk("---[*cmd talbe:{%8x} {%8x} {%8x} {%8x} {%8x}]---\n",p_dump_cmd_info[tmp].tab_addr[0],p_dump_cmd_info[tmp].tab_addr[1],p_dump_cmd_info[tmp].tab_addr[2],p_dump_cmd_info[tmp].tab_addr[3],p_dump_cmd_info[tmp].tab_addr[4]);
+		printk("*************dump_count = %d*********************\n",p_dump_cmd_info[tmp].dump_count);
+	}
 #endif
 }
 EXPORT_SYMBOL_GPL(hi_ahci_st_dump);

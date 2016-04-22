@@ -203,6 +203,7 @@
 #define STOP_CMD					0x05e8
 #define BITS_TX_STOP_EN					MK_BITS(1, 1)
 #define BITS_RX_STOP_EN					MK_BITS(0, 1)
+#define	STOP_RX_TX					(0x3 << 0)
 
 #define FLUSH_CMD					0x05EC
 #define BITS_TX_FLUSH_CMD				MK_BITS(5, 1)
@@ -235,6 +236,7 @@ void higmac_set_macif(struct higmac_netdev_local *ld, int mode, int speed);
 void higmac_hw_internal_fephy_reset(struct higmac_adapter *adapter);
 void higmac_hw_external_phy_reset(void);
 void higmac_hw_all_clk_disable(void);
+void higmac_hw_all_clk_enable(void);
 
 /* board independent func */
 int higmac_hw_set_mac_addr(struct higmac_netdev_local *ld,

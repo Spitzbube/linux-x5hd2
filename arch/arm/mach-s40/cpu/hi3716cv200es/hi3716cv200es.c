@@ -14,9 +14,7 @@
 #include <mach/platform.h>
 #include <asm/io.h>
 #include <mach/clock.h>
-#include "mach/io.h"
-#include "../cpu.h"
-
+#include <mach/cpu.h>
 
 extern struct device_resource hi3716cv200es_hinfc504_device_resource;
 /*****************************************************************************/

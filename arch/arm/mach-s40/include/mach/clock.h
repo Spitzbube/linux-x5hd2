@@ -7,15 +7,6 @@
 #include <linux/clkdev.h>
 #include <asm/clkdev.h>
 
-
-/*FIXME: need to be modified by s40v2 reg*/
-
-/* PLL Clock enable registers */
-#define	PMC_BASE	IO_ADDRESS(REG_BASE_PMC)
-
-#define	PERI_PMC4	(PMC_BASE + 0x010)
-#define	PERI_PMC2	(PMC_BASE + 0x08)
-
 struct clk;
 
 /**

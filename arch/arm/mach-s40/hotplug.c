@@ -1,132 +1,82 @@
-/*
+/******************************************************************************
+ *    COPYRIGHT (C) 2013 Hisilicon
+ *    All rights reserved.
+ * ***
+ *    Create by Czyong 2013-12-18
  *
- * clone form linux/arch/arm/mach-realview/hotplug.c
- *
- *  Copyright (C) 2002 ARM Ltd.
- *  All Rights Reserved
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- */
+******************************************************************************/
+
 #include <linux/kernel.h>
-#include <linux/errno.h>
 #include <linux/smp.h>
 #include <linux/completion.h>
-
+#include <mach/hardware.h>
 #include <asm/cacheflush.h>
-#include "platsmp.h"
+#include <asm/io.h>
 
-static DECLARE_COMPLETION(cpu_killed);
+/*****************************************************************************/
 
-static inline void cpu_enter_lowpower(void)
+static inline void s40_scu_power_off(int cpu)
 {
-	unsigned int v;
+	unsigned int regval = readl(__io_address(REG_BASE_PMC));
+	regval |= (1 << 3);
+	writel(regval, __io_address(REG_BASE_PMC));
+	asm(".word	0xe320f003\n" : : : "memory", "cc");
+}
+/*****************************************************************************/
 
+void s40_cpu_die(unsigned int cpu)
+{
 	flush_cache_all();
-	dsb();
-	asm volatile(
-	"	mcr	p15, 0, %1, c7, c5, 0\n"
-	"	mcr	p15, 0, %1, c7, c10, 4\n"
-	/*
-	 * Turn off coherency
-	 */
-	"	mrc	p15, 0, %0, c1, c0, 1\n"
-	"	bic	%0, %0, #0x40\n"
-	"	mcr	p15, 0, %0, c1, c0, 1\n"
-	"	mrc	p15, 0, %0, c1, c0, 0\n"
-	"	bic	%0, %0, #0x04\n"
-	"	mcr	p15, 0, %0, c1, c0, 0\n"
-	  : "=&r" (v)
-	  : "r" (0)
-	  : "cc");
+	s40_scu_power_off(cpu);
+	BUG();
 }
-
-static inline void cpu_leave_lowpower(void)
-{
-	unsigned int v;
-
-	asm volatile(
-	"	mrc	p15, 0, %0, c1, c0, 0\n"
-	"	orr	%0, %0, #0x04\n"
-	"	mcr	p15, 0, %0, c1, c0, 0\n"
-	"	mrc	p15, 0, %0, c1, c0, 1\n"
-	"	orr	%0, %0, #0x20\n"
-	"	mcr	p15, 0, %0, c1, c0, 1\n"
-	  : "=&r" (v)
-	  :
-	  : "cc");
-}
-
-static inline void platform_do_lowpower(unsigned int cpu)
-{
-	slave_cores_power_off(cpu);
-	/*
-	 * there is no power-control hardware on this platform, so all
-	 * we can do is put the core into WFI; this is safe as the calling
-	 * code will have already disabled interrupts
-	 */
-	for (;;) {
-		/*
-		 * here's the WFI
-		 */
-		asm(".word	0xe320f003\n"
-		    :
-		    :
-		    : "memory", "cc");
-
-		if (pen_release == cpu) {
-			/*
-			 * OK, proper wakeup, we're done
-			 */
-			break;
-		}
-
-		/*
-		 * getting here, means that we have come out of WFI without
-		 * having been woken up - this shouldn't happen
-		 *
-		 * The trouble is, letting people know about this is not really
-		 * possible, since we are currently running incoherently, and
-		 * therefore cannot safely call printk() or anything else
-		 */
-#ifdef DEBUG
-		printk(KERN_DEBUG "CPU%u: spurious wakeup call\n", cpu);
-#endif
-	}
-}
-
-int platform_cpu_kill(unsigned int cpu)
-{
-	return 1;
-}
-
+/*****************************************************************************/
 /*
- * platform-specific code to shutdown a CPU
- *
- * Called with IRQs disabled
+ * copy startup code to sram, and flash cache.
+ * @start_addr: slave start phy address
+ * @jump_addr: slave jump phy address
  */
-void platform_cpu_die(unsigned int cpu)
+void set_scu_boot_addr(unsigned int start_addr, unsigned int jump_addr)
 {
-	/*
-	 * we're ready for shutdown now, so do it
-	 */
-	cpu_enter_lowpower();
+	unsigned int *virtaddr;
+	unsigned int *p_virtaddr;
 
-	platform_do_lowpower(cpu);
+	p_virtaddr = virtaddr = ioremap(start_addr, PAGE_SIZE);
 
-	/*
-	 * bring this CPU back into the world of cache
-	 * coherency, and then restore interrupts
-	 */
-	cpu_leave_lowpower();
+	*p_virtaddr++ = 0xe51ff004; /* ldr  pc, [pc, #-4] */
+	*p_virtaddr++ = jump_addr;  /* pc jump phy address */
+
+	smp_wmb();
+	__cpuc_flush_dcache_area((void *)virtaddr,
+		(size_t)((char *)p_virtaddr - (char *)virtaddr));
+	outer_clean_range(__pa(virtaddr), __pa(p_virtaddr));
+
+	iounmap(virtaddr);
 }
+/*****************************************************************************/
 
-int platform_cpu_disable(unsigned int cpu)
+void s40_scu_power_up(int cpu)
 {
-	/*
-	 * we don't allow CPU 0 to be shutdown (it is still too special
-	 * e.g. clock tick interrupts)
-	 */
-	return cpu == 0 ? -EPERM : 0;
+	unsigned int regval;
+	static int init_flags = 0;
+
+	if (!init_flags) {
+		writel(0x3, __io_address(REG_PERI_PMC3));
+		writel(0xffff88, __io_address(REG_PERI_PMC1));
+		init_flags++;
+	}
+
+	regval = readl(__io_address(REG_BASE_PMC));
+	/* a9_core1_pd_req=0, enable core1 power*/
+	regval &= ~(1 << 3);
+	/* a9_core1_wait_mtcoms_ack=0, no wait ack */
+	regval &= ~(1 << 8);
+	/* a9_core1_mtcmos_reg=1, core1 mtcoms power on */
+	regval |= (1 << 0);
+	writel(regval, __io_address(REG_BASE_PMC));
+
+	/* clear the slave cpu reset */
+	regval = readl(__io_address(A9_REG_BASE_RST));
+	regval &= ~(1 << 17);
+	writel(regval, __io_address(A9_REG_BASE_RST));
 }

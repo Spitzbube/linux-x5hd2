@@ -113,7 +113,7 @@ static ssize_t dbgfs_read_retry_read(struct file *filp, char __user *buffer,
 
 		ptr = buf;
 		ptr += sprintf(ptr, "Read retry: ");
-		for (ix = 0; ix < dbg_read_retry->max_retry; ix++)
+		for (ix = 1; ix <= dbg_read_retry->max_retry; ix++)
 			ptr += sprintf(ptr, "%d, ", dbg_read_retry->retry[ix]);
 		ptr += sprintf(ptr, "\n");
 
@@ -344,7 +344,6 @@ static void hinfc504_dbg_read_retry_rr(struct hinfc_host *host, int index)
 	item = &dbg_read_retry->item[dbg_read_retry->index];
 
 	dbg_read_retry->count++;
-	dbg_read_retry->retry[index]++;
 
 	do_gettime(&item->hour, &item->min, &item->sec, &item->msec);
 
@@ -352,6 +351,8 @@ static void hinfc504_dbg_read_retry_rr(struct hinfc_host *host, int index)
 	item->retry = index;
 
 	item->ecc_err = GET_UC_ECC(host) ? 1 : 0;
+	if (!item->ecc_err)
+		dbg_read_retry->retry[index]++;
 
 	if (++dbg_read_retry->index >= CONFIG_HINFC504_DBG_READ_RETRY_NUM)
 		dbg_read_retry->index = 0;

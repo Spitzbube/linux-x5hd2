@@ -22,6 +22,16 @@ void init_autoeee(struct higmac_netdev_local *ld, int link_stat)
 		if (!eee_available)
 			goto not_support;
 
+		if (eee_available == PHY_EEE) {
+			if (debug(AUTOEEE))
+				pr_info("enter phy-EEE mode\n");
+
+			v = readl(ld->gmac_iobase + EEE_ENABLE);
+			v &= ~BIT_EEE_ENABLE;/* disable auto-EEE */
+			writel(v, ld->gmac_iobase + EEE_ENABLE);
+			return;
+		}
+
 		ld->eee_init = phy_info->eee_init;
 eee_init:
 		lp_eee_capable = ld->eee_init(ld->phy);

@@ -2,21 +2,22 @@
 #include <linux/platform_device.h>
 #include <linux/dma-mapping.h>
 #include <linux/types.h>
+#include <mach/hardware.h>
 
 #include "xhci.h"
 #include "hixhci.h"
 
 MODULE_LICENSE("Dual MIT/GPL");
 
-#define PERI_CRG44            IO_ADDRESS(0xF8A22000 + 0xb0)
+#define PERI_CRG44            __io_address(0xF8A22000 + 0xb0)
 #define USB3_VCC_SRST_REQ     (1<<13)
 #define USB3_VAUX_SRST_REQ    (1<<12)
 
-#define PERI_CRG45              IO_ADDRESS(0xF8A22000 + 0xb4)
+#define PERI_CRG45              __io_address(0xF8A22000 + 0xb4)
 #define USB3_PHY_SRST_REQ       (0x1 << 4)
 #define USB3_PHY_SRST_TREQ      (0x1 << 5)
 
-#define PERI_USB5             IO_ADDRESS(0xF8A20000 + 0x134)
+#define PERI_USB5             __io_address(0xF8A20000 + 0x134)
 
 #define REG_GCTL              0xc110
 #define BIT_SOFT_RESET        (0x1 << 11)

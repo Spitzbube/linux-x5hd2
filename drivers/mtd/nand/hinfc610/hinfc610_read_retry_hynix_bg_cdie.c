@@ -60,6 +60,7 @@ static int hinfc610_hynix_bg_cdie_get_rr_param(struct hinfc_host *host)
 	writel(0x00, host->chip->IO_ADDR_R); /* data: 0x00 */
 	hinfc_write(host, 0xAE, HINFC610_ADDRL);/* address: 0xAE */
 	hinfc_write(host, 0x36, HINFC610_CMD);  /* cmd: 0x36 */
+	/* according to hynix doc, no need to config HINFC610_OP_WAIT_READY_EN */
 	hinfc_write(host, HINFC610_WRITE_1CMD_1ADD_DATA, HINFC610_OP);
 	WAIT_CONTROLLER_FINISH();
 
@@ -68,22 +69,27 @@ static int hinfc610_hynix_bg_cdie_get_rr_param(struct hinfc_host *host)
 	writel(0x4D, host->chip->IO_ADDR_R); /* data: 0x4d */
 	hinfc_write(host, 0xB0, HINFC610_ADDRL);/* address: 0xB0 */
 	/* only address and data, without cmd */
+	/* according to hynix doc, no need to config HINFC610_OP_WAIT_READY_EN */
 	hinfc_write(host, HINFC610_WRITE_0CMD_1ADD_DATA, HINFC610_OP);
 	WAIT_CONTROLLER_FINISH();
 
 	/* step4: cmd: 0x16, 0x17, 0x04, 0x19 */
 	hinfc_write(host, 0x17 << 8 | 0x16, HINFC610_CMD);
+	/* according to hynix doc, no need to config HINFC610_OP_WAIT_READY_EN */
 	hinfc_write(host, HINFC610_WRITE_2CMD_0ADD_NODATA, HINFC610_OP);
 	WAIT_CONTROLLER_FINISH();
 
 	hinfc_write(host, 0x19 << 8 | 0x04, HINFC610_CMD);
+	/* according to hynix doc, no need to config HINFC610_OP_WAIT_READY_EN */
 	hinfc_write(host, HINFC610_WRITE_2CMD_0ADD_NODATA, HINFC610_OP);
 	WAIT_CONTROLLER_FINISH();
 
 	/* step5: cmd: 0x00 0x30, address: 0x02 00 00 00 */
 	hinfc_write(host, 0x2000000, HINFC610_ADDRL);
+	hinfc_write(host, 0x00, HINFC610_ADDRH);
 	hinfc_write(host, 0x30 << 8 | 0x00, HINFC610_CMD);
 	hinfc_write(host, 0x800, HINFC610_DATA_NUM);
+	/* according to hynix doc, need to config HINFC610_OP_WAIT_READY_EN */
 	hinfc_write(host, HINFC610_READ_2CMD_5ADD, HINFC610_OP);
 	WAIT_CONTROLLER_FINISH();
 
@@ -102,7 +108,8 @@ static int hinfc610_hynix_bg_cdie_get_rr_param(struct hinfc_host *host)
 
 	/* step8: cmd: 0x38 */
 	hinfc_write(host, 0x38, HINFC610_CMD);
-	hinfc_write(host, HINFC610_WRITE_1CMD_0ADD_NODATA, HINFC610_OP);
+	/* according to hynix doc, need to config HINFC610_OP_WAIT_READY_EN */
+	hinfc_write(host, HINFC610_WRITE_1CMD_0ADD_NODATA_WAIT_READY, HINFC610_OP);
 	WAIT_CONTROLLER_FINISH();
 
 	host->enable_ecc_randomizer(host, ENABLE, ENABLE);
@@ -117,7 +124,12 @@ static int hinfc610_hynix_bg_cdie_set_rr_reg(struct hinfc_host *host,
 					     char *val)
 {
 	int i;
+	int regval;
 	host->enable_ecc_randomizer(host, DISABLE, DISABLE);
+
+	regval = hinfc_read(host, HINFC610_PWIDTH);
+	hinfc_write(host, 0xFFF, HINFC610_PWIDTH);
+
 	hinfc_write(host, 1, HINFC610_DATA_NUM);/* data length 1 */
 
 	for (i = 0; i <= 8; i++) {
@@ -129,6 +141,9 @@ static int hinfc610_hynix_bg_cdie_set_rr_reg(struct hinfc_host *host,
 				HINFC610_ADDRL);
 			hinfc_write(host,
 				0x36, HINFC610_CMD);
+			/*
+			 * no need to config HINFC610_OP_WAIT_READY_EN, here not config this bit.
+			 */
 			hinfc_write(host,
 				HINFC610_WRITE_1CMD_1ADD_DATA,
 				HINFC610_OP);
@@ -136,8 +151,12 @@ static int hinfc610_hynix_bg_cdie_set_rr_reg(struct hinfc_host *host,
 		case 8:
 			hinfc_write(host,
 				0x16, HINFC610_CMD);
+			/*
+			 * according to hynix doc, only 1 cmd: 0x16. 
+			 * And no need to config HINFC610_OP_WAIT_READY_EN, here not config this bit.
+			 */
 			hinfc_write(host,
-				HINFC610_WRITE_2CMD_0ADD_NODATA,
+				HINFC610_WRITE_1CMD_0ADD_NODATA,
 				HINFC610_OP);
 			break;
 		default:
@@ -145,6 +164,9 @@ static int hinfc610_hynix_bg_cdie_set_rr_reg(struct hinfc_host *host,
 			hinfc_write(host,
 				hinfc610_hynix_bg_cdie_rr_reg[i],
 				HINFC610_ADDRL);
+			/*
+			 * no need to config HINFC610_OP_WAIT_READY_EN, here not config this bit.
+			 */
 			hinfc_write(host,
 				HINFC610_WRITE_0CMD_1ADD_DATA,
 				HINFC610_OP);
@@ -153,6 +175,8 @@ static int hinfc610_hynix_bg_cdie_set_rr_reg(struct hinfc_host *host,
 		WAIT_CONTROLLER_FINISH();
 	}
 	host->enable_ecc_randomizer(host, ENABLE, ENABLE);
+	hinfc_write(host, regval, HINFC610_PWIDTH);
+
 	return 0;
 }
 /*****************************************************************************/

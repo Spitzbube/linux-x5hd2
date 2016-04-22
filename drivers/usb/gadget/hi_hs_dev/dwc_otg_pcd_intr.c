@@ -45,6 +45,7 @@ extern void complete_xiso_ep(dwc_otg_pcd_ep_t * ep);
 
 #define DEBUG_EP0
 
+extern void set_usbdev_connect(int index, int online);
 /**
  * This function updates OTG.
  */
@@ -864,7 +865,6 @@ int32_t dwc_otg_pcd_handle_usb_reset_intr(dwc_otg_pcd_t * pcd)
 
 	core_if->lx_state = DWC_OTG_L0;
 
-	DWC_PRINTF("USB RESET\n");
 #ifdef DWC_EN_ISOC
 	for (i = 1; i < 16; ++i) {
 		dwc_otg_pcd_ep_t *ep;
@@ -5081,9 +5081,11 @@ int32_t dwc_otg_pcd_handle_intr(dwc_otg_pcd_t * pcd)
 			retval |= dwc_otg_pcd_handle_i2c_intr(pcd);
 		}
 		if (gintr_status.b.erlysuspend) {
+			set_usbdev_connect(0, 0);
 			retval |= dwc_otg_pcd_handle_early_suspend_intr(pcd);
 		}
 		if (gintr_status.b.usbreset) {
+			set_usbdev_connect(0, 1);
 			retval |= dwc_otg_pcd_handle_usb_reset_intr(pcd);
 		}
 		if (gintr_status.b.enumdone) {

@@ -15,6 +15,7 @@
 #include <linux/mmc/host.h>
 #include <linux/mmc/mmc.h>
 #include <linux/mmc/card.h>
+#include <linux/mmc/sd.h>
 
 #include <linux/ioport.h>
 #include <linux/device.h>
@@ -29,9 +30,10 @@
 #include <asm/sizes.h>
 #include <mach/hardware.h>
 #include <linux/version.h>
+#include <asm/io.h>
 
-#include "hi_mci_reg.h"
-#include "hi_mci.h"
+#include "himci_reg.h"
+#include "himci.h"
 #include <mach/cpu-info.h>
 
 /*************************************************************************/
@@ -43,9 +45,6 @@
 #include "himci_s40.c"
 #endif
 
-#ifdef CONFIG_ARCH_GODEYES
-#include "himci_godeyes.c"
-#endif
 /*************************************************************************/
 #define DRIVER_NAME "hi_mci"
 
@@ -70,13 +69,55 @@ MODULE_PARM_DESC(trace_level, "HIMCI_TRACE_LEVEL");
 
 #endif
 
+/* get MMC host controler pointer for sdio wifi interface 
+ * hostid: sdio number ( sdio0:  0  sdio1:  1 )
+*/
+extern struct kset *devices_kset;
+struct mmc_host * get_mmchost(int hostid)
+{
+	struct device *dev = NULL;
+	struct mmc_host * host = NULL;
+	struct list_head * list = NULL;
+	char name[5] ="mmc1";
+
+	/* sdio0 is mmc1; sdio1 is mmc0 because we register SDIO1 first*/
+	if (hostid == 0) {
+		name[3] = '1';
+	} else if (hostid == 1) {
+		name[3] = '0';
+	} else {
+		return NULL;
+	}
+	
+	spin_lock(&devices_kset->list_lock);
+	/* Walk the devices list backward */
+	list = &devices_kset->list;
+	while (!list_empty(list)) {
+		dev = list_entry(list->prev, struct device,kobj.entry);
+
+		get_device(dev);
+
+		if (strcmp(dev_name(dev), name) == 0) {
+			host = container_of(dev, struct mmc_host, class_dev);
+			put_device(dev);
+			spin_unlock(&devices_kset->list_lock);
+			return host;
+		}
+		list = list->prev;
+
+		put_device(dev);
+	}
+	spin_unlock(&devices_kset->list_lock);
+
+	return host;
+}
+EXPORT_SYMBOL(get_mmchost);
+
 /* reset MMC host controler */
-static void hi_mci_sys_reset(struct himci_host *host)
+static void himciv200_sys_reset(struct himci_host *host)
 {
 	unsigned int reg_value;
 	unsigned long flags;
-
-	himci_trace(2, "begin");
 
 	local_irq_save(flags);
 
@@ -91,22 +132,25 @@ static void hi_mci_sys_reset(struct himci_host *host)
 	local_irq_restore(flags);
 }
 
-static void hi_mci_ctrl_power(struct himci_host *host, unsigned int flag)
+static void hi_mci_ctrl_power(struct himci_host *host, unsigned int flag, unsigned int force)
 {
 	himci_trace(2, "begin");
 
-	if (flag == POWER_OFF)
-		himci_writel(0, host->base + MCI_RESET_N);
+	if (host->power_status != flag || force == FORCE_ENABLE) {
+		if (flag == POWER_OFF)
+			himci_writel(0, host->base + MCI_RESET_N);
 
-	himci_writel(flag, host->base + MCI_PWREN);
+		himci_writel(flag, host->base + MCI_PWREN);
 
-	if (flag == POWER_ON)
-		himci_writel(1, host->base + MCI_RESET_N);
+		if (flag == POWER_ON)
+			himci_writel(1, host->base + MCI_RESET_N);
 
-	if (in_interrupt()) {
-		mdelay(100);
-	} else {
-		msleep(100);
+		if (in_interrupt())
+			mdelay(100);
+		else
+			msleep(100);
+
+		host->power_status = flag;
 	}
 }
 
@@ -138,9 +182,6 @@ static int hi_mci_wait_cmd(struct himci_host *host)
 	int wait_retry_count = 0;
 	unsigned int reg_data = 0;
 	unsigned long flags;
-
-	himci_trace(2, "begin");
-	himci_assert(host);
 
 	while (1) {
 		/*
@@ -237,11 +278,11 @@ static void hi_mci_init_card(struct himci_host *host)
 	himci_trace(2, "begin");
 	himci_assert(host);
 
-	hi_mci_sys_reset(host);
-
-	hi_mci_ctrl_power(host, POWER_OFF);
+	hi_mci_ctrl_power(host, POWER_OFF, FORCE_ENABLE);
 	/* card power on */
-	hi_mci_ctrl_power(host, POWER_ON);
+	hi_mci_ctrl_power(host, POWER_ON, FORCE_ENABLE);
+
+	himciv200_sys_reset(host);
 
 	/* clear MMC host intr */
 	himci_writel(ALL_INT_CLR, host->base + MCI_RINTSTS);
@@ -487,6 +528,10 @@ static int hi_mci_exec_cmd(struct himci_host *host,
 		cmd_regs.bits.send_initialization = 1;
 	else
 		cmd_regs.bits.send_initialization = 0;
+	if (cmd->opcode == SD_SWITCH_VOLTAGE)
+		cmd_regs.bits.volt_switch = 1;
+	else
+		cmd_regs.bits.volt_switch = 0;
 
 	cmd_regs.bits.card_number = 0;
 	cmd_regs.bits.cmd_index = cmd->opcode;
@@ -541,7 +586,7 @@ static void hi_mci_cmd_done(struct himci_host *host, unsigned int stat)
 			    stat);
 	} else if (stat & (RCRC_INT_STATUS | RE_INT_STATUS)) {
 		cmd->error = -EILSEQ;
-		himci_trace(3, "irq cmd status stat = 0x%x is response error!",
+		himci_error( "irq cmd status stat = 0x%x is response error!",
 			    stat);
 	}
 }
@@ -558,12 +603,12 @@ static void hi_mci_data_done(struct himci_host *host, unsigned int stat)
 
 	if (stat & (HTO_INT_STATUS | DRTO_INT_STATUS)) {
 		data->error = -ETIMEDOUT;
-		himci_trace(3, "irq data status stat = 0x%x is timeout error!",
+		himci_error("irq data status stat = 0x%x is timeout error!",
 			    stat);
 	} else if (stat & (EBE_INT_STATUS | SBE_INT_STATUS |
 			   FRUN_INT_STATUS | DCRC_INT_STATUS)) {
 		data->error = -EILSEQ;
-		himci_trace(3, "irq data status stat = 0x%x is data error!",
+		himci_error("irq data status stat = 0x%x is data error!",
 			    stat);
 	}
 	if (!data->error)
@@ -599,6 +644,12 @@ static int hi_mci_wait_cmd_complete(struct himci_host *host)
 			if (cmd_irq_reg & CD_INT_STATUS) {
 				himci_writel((CD_INT_STATUS | RTO_INT_STATUS |
 					      RCRC_INT_STATUS | RE_INT_STATUS),
+					     host->base + MCI_RINTSTS);
+				spin_unlock_irqrestore(&host->lock, flags);
+				hi_mci_cmd_done(host, cmd_irq_reg);
+				return 0;
+			} else if (cmd_irq_reg & VOLT_SWITCH_INT_STATUS) {
+				himci_writel(VOLT_SWITCH_INT_STATUS,
 					     host->base + MCI_RINTSTS);
 				spin_unlock_irqrestore(&host->lock, flags);
 				hi_mci_cmd_done(host, cmd_irq_reg);
@@ -652,8 +703,7 @@ static int hi_mci_wait_data_complete(struct himci_host *host)
 	return 0;
 }
 
-static int hi_mci_wait_card_complete(struct himci_host *host,
-				     struct mmc_data *data)
+static int hi_mci_wait_card_complete(struct himci_host *host)
 {
 	unsigned int card_retry_count = 0;
 	unsigned long card_jiffies_timeout;
@@ -661,12 +711,10 @@ static int hi_mci_wait_card_complete(struct himci_host *host,
 
 	himci_trace(2, "begin");
 	himci_assert(host);
-	himci_assert(data);
 
 	card_jiffies_timeout = jiffies + request_timeout;
 	while (1) {
 		if (!time_before(jiffies, card_jiffies_timeout)) {
-			data->error = -ETIMEDOUT;
 			himci_trace(3, "wait card ready complete is timeout!");
 			return -1;
 		}
@@ -688,7 +736,6 @@ static void hi_mci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 	struct himci_host *host = mmc_priv(mmc);
 	int blk_size, tmp_reg, fifo_count = 0;
 	int ret = 0;
-	unsigned long flags;
 
 	himci_trace(2, "begin");
 	himci_assert(mmc);
@@ -699,6 +746,12 @@ static void hi_mci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 
 	if (host->card_status == CARD_UNPLUGED) {
 		mrq->cmd->error = -ENODEV;
+		goto request_end;
+	}
+	
+	ret = hi_mci_wait_card_complete(host);
+	if (ret) {
+		mrq->cmd->error = ret;
 		goto request_end;
 	}
 
@@ -767,19 +820,112 @@ static void hi_mci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 			ret = hi_mci_wait_cmd_complete(host);
 			if (ret)
 				goto request_end;
-			if (mrq->data->flags & MMC_DATA_WRITE) {
-				/* wait card write data complete */
-				hi_mci_wait_card_complete(host, mrq->data);
-			}
 		}
 	}
 request_end:
-	/* clear MMC host intr */
-	spin_lock_irqsave(&host->lock, flags);
-	himci_writel(ALL_INT_CLR, host->base + MCI_RINTSTS);
-	spin_unlock_irqrestore(&host->lock, flags);
-
 	hi_mci_finish_request(host, mrq);
+}
+
+static int hi_mci_do_start_signal_voltage_switch(struct himci_host *host,
+						 struct mmc_ios *ios)
+{
+	u32 ctrl;
+	/*
+	 * We first check whether the request is to set signalling voltage
+	 * to 3.3V. If so, we change the voltage to 3.3V and return quickly.
+	 */
+	ctrl = himci_readl(host->base + MCI_UHS_REG);
+	if (ios->signal_voltage == MMC_SIGNAL_VOLTAGE_330) {
+		/* Set 1.8V Signal Enable in the MCI_UHS_REG to 1 */
+		ctrl &= ~HI_SDXC_CTRL_VDD_180;
+		himci_writel(ctrl, host->base + MCI_UHS_REG);
+		himci_ldo_config(0);
+
+		/* Wait for 5ms */
+		usleep_range(5000, 5500);
+
+		/* 3.3V regulator output should be stable within 5 ms */
+		ctrl = himci_readl(host->base + MCI_UHS_REG);
+		if (!(ctrl & HI_SDXC_CTRL_VDD_180)) {
+			return 0;
+		} else {
+			himci_error(": Switching to 3.3V "
+				    "signalling voltage failed\n");
+			return -EIO;
+		}
+	} else if (!(ctrl & HI_SDXC_CTRL_VDD_180) &&
+		   (ios->signal_voltage == MMC_SIGNAL_VOLTAGE_180)) {
+		/* Stop SDCLK */
+		hi_mci_control_cclk(host, DISABLE);
+
+		/*
+		 * Enable 1.8V Signal Enable in the MCI_UHS_REG
+		 */
+		ctrl |= HI_SDXC_CTRL_VDD_180;
+		himci_writel(ctrl, host->base + MCI_UHS_REG);
+		himci_ldo_config(1);
+
+		/* Wait for 8ms */
+		usleep_range(8000, 8500);
+
+		ctrl = himci_readl(host->base + MCI_UHS_REG);
+		if (ctrl & HI_SDXC_CTRL_VDD_180) {
+			/* Provide SDCLK again and wait for 1ms */
+			hi_mci_control_cclk(host, ENABLE);
+			usleep_range(1000, 1500);
+
+			/*
+			 * If CMD11 return CMD down, then the card
+			 * was successfully switched to 1.8V signaling.
+			 */
+			ctrl = himci_readl(host->base + MCI_RINTSTS);
+			if ((ctrl & VOLT_SWITCH_INT_STATUS)
+			    && (ctrl & CD_INT_STATUS)) {
+				writel(VOLT_SWITCH_INT_STATUS | CD_INT_STATUS,
+				       host->base + MCI_RINTSTS);
+				return 0;
+			}
+		}
+
+		/*
+		 * If we are here, that means the switch to 1.8V signaling
+		 * failed. We power cycle the card, and retry initialization
+		 * sequence by setting S18R to 0.
+		 */
+
+		ctrl &= ~HI_SDXC_CTRL_VDD_180;
+		himci_writel(ctrl, host->base + MCI_UHS_REG);
+		himci_ldo_config(0);
+
+		/* Wait for 5ms */
+		usleep_range(5000, 5500);
+
+		hi_mci_ctrl_power(host, POWER_OFF, FORCE_DISABLE);
+		/* Wait for 1ms as per the spec */
+		usleep_range(1000, 1500);
+		hi_mci_ctrl_power(host, POWER_ON, FORCE_DISABLE);
+
+		hi_mci_control_cclk(host, DISABLE);
+		/* Wait for 1ms as per the spec */
+		usleep_range(1000, 1500);
+		hi_mci_control_cclk(host, ENABLE);
+
+		himci_error( ": Switching to 1.8V signalling "
+			    "voltage failed, retrying with S18R set to 0\n");
+		return -EAGAIN;
+	} else{
+		/* No signal voltage switch required */
+		return 0;
+	}
+}
+
+static int hi_mci_start_signal_voltage_switch(struct mmc_host *mmc,
+					      struct mmc_ios *ios)
+{
+	struct himci_host *host = mmc_priv(mmc);
+	int err;
+	err = hi_mci_do_start_signal_voltage_switch(host, ios);
+	return err;
 }
 
 static void hi_mci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
@@ -793,13 +939,17 @@ static void hi_mci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 	himci_assert(host);
 
 	himci_trace(3, "ios->power_mode = %d ", ios->power_mode);
+	if (!ios->clock) {
+		hi_mci_control_cclk(host, DISABLE);
+	}
+
 	switch (ios->power_mode) {
 	case MMC_POWER_OFF:
-		hi_mci_ctrl_power(host, POWER_OFF);
+		hi_mci_ctrl_power(host, POWER_OFF, FORCE_DISABLE);
 		break;
 	case MMC_POWER_UP:
 	case MMC_POWER_ON:
-		hi_mci_ctrl_power(host, POWER_ON);
+		hi_mci_ctrl_power(host, POWER_ON, FORCE_DISABLE);
 		break;
 	}
 	himci_trace(3, "ios->clock = %d ", ios->clock);
@@ -807,8 +957,6 @@ static void hi_mci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 		hi_mci_control_cclk(host, DISABLE);
 		hi_mci_set_cclk(host, ios->clock);
 		hi_mci_control_cclk(host, ENABLE);
-	} else {
-		hi_mci_control_cclk(host, DISABLE);
 	}
 
 	/* set bus_width */
@@ -854,11 +1002,41 @@ static void hi_mci_hw_reset(struct mmc_host *mmc)
 	usleep_range(300, 1000);
 }
 
+static void hi_mci_enable_sdio_irq(struct mmc_host *mmc, int enable)
+{
+	struct himci_host *host = mmc_priv(mmc);
+	unsigned int reg_value;
+
+	reg_value = readl(host->base + MCI_INTMASK);
+	if (enable) {
+		reg_value |= SDIO_INT_MASK;
+	} else {
+		reg_value &= ~SDIO_INT_MASK;
+	}
+	writel(reg_value, host->base + MCI_INTMASK);
+}
+static int hi_mci_get_card_detect(struct mmc_host *mmc)
+{
+	unsigned ret;
+	struct himci_host *host = mmc_priv(mmc);
+
+	himci_trace(2, "begin");
+	ret = hi_mci_sys_card_detect(host);
+
+	if(ret)
+		return 0;
+	else
+		return 1;
+}
+
 static const struct mmc_host_ops hi_mci_ops = {
 	.request = hi_mci_request,
 	.set_ios = hi_mci_set_ios,
 	.get_ro = hi_mci_get_ro,
+	.start_signal_voltage_switch = hi_mci_start_signal_voltage_switch,
+	.enable_sdio_irq = hi_mci_enable_sdio_irq,
 	.hw_reset = hi_mci_hw_reset,
+	.get_cd = hi_mci_get_card_detect,
 };
 
 static irqreturn_t hisd_irq(int irq, void *dev_id)
@@ -869,32 +1047,33 @@ static irqreturn_t hisd_irq(int irq, void *dev_id)
 	unsigned long flags;
 
 	spin_lock_irqsave(&host->lock, flags);
-	/* disable MMC host interrupt */
-	tmp_reg = himci_readl(host->base + MCI_INTMASK);
-	tmp_reg &= ~ALL_INT_MASK;
-	himci_writel(tmp_reg, host->base + MCI_INTMASK);
-
-	state = himci_readl(host->base + MCI_RINTSTS);
+	state = himci_readl(host->base + MCI_MINTSTS);
 
 	if (state & DTO_INT_STATUS) {
+		tmp_reg = himci_readl(host->base + MCI_INTMASK);
+		tmp_reg &= ~DTO_INT_MASK;
+		himci_writel(tmp_reg, host->base + MCI_INTMASK);
+		
 		host->pending_events |= HIMCI_PEND_DTO_m;
 		himci_writel(DTO_INT_STATUS, host->base + MCI_RINTSTS);
+		wake_up(&host->intr_wait);
+		
+		tmp_reg = himci_readl(host->base + MCI_INTMASK);
+		tmp_reg |= DTO_INT_MASK;
+		himci_writel(tmp_reg, host->base + MCI_INTMASK);
+	}
+	
+	if (state & SDIO_INT_STATUS) {
+		himci_writel(SDIO_INT_STATUS , host->base + MCI_RINTSTS);
+		mmc_signal_sdio_irq(host->mmc);
 	}
 
-	/* enable MMC host interrupt */
-	tmp_reg = himci_readl(host->base + MCI_INTMASK);
-	tmp_reg &= ~ALL_INT_MASK;
-	tmp_reg |= DTO_INT_MASK;
-	himci_writel(tmp_reg, host->base + MCI_INTMASK);
-
 	spin_unlock_irqrestore(&host->lock, flags);
-
-	wake_up(&host->intr_wait);
 
 	return IRQ_HANDLED;
 }
 
-static int __devinit hi_mci_probe(struct platform_device *pdev)
+static int __init hi_mci_probe(struct platform_device *pdev)
 {
 	struct mmc_host *mmc;
 	struct himci_host *host = NULL;
@@ -974,6 +1153,8 @@ static int __devinit hi_mci_probe(struct platform_device *pdev)
 	/* enable mmc clk */
 	hi_mci_sys_ctrl_init(host, host_crg_res->start);
 
+	host->power_status = POWER_OFF;
+
 	/* enable card */
 	hi_mci_init_card(host);
 
@@ -1022,7 +1203,7 @@ out:
 	return ret;
 }
 
-static int __devexit hi_mci_remove(struct platform_device *pdev)
+static int __exit hi_mci_remove(struct platform_device *pdev)
 {
 	struct mmc_host *mmc = platform_get_drvdata(pdev);
 
@@ -1037,7 +1218,7 @@ static int __devexit hi_mci_remove(struct platform_device *pdev)
 		free_irq(host->irq, host);
 		del_timer_sync(&host->timer);
 		mmc_remove_host(mmc);
-		hi_mci_ctrl_power(host, POWER_OFF);
+		hi_mci_ctrl_power(host, POWER_OFF, FORCE_DISABLE);
 		hi_mci_control_cclk(host, DISABLE);
 		iounmap(host->base);
 		dma_free_coherent(&pdev->dev, PAGE_SIZE, host->dma_vaddr,
@@ -1047,7 +1228,7 @@ static int __devexit hi_mci_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static int hi_mci_shutdown(struct platform_device *pdev)
+static void hi_mci_shutdown(struct platform_device *pdev)
 {
 	struct mmc_host *mmc = platform_get_drvdata(pdev);
 
@@ -1059,10 +1240,8 @@ static int hi_mci_shutdown(struct platform_device *pdev)
 		val |= CTRL_RESET | FIFO_RESET | DMA_RESET;
 		himci_writel(val, host->base + MCI_CTRL);
 
-		hi_mci_ctrl_power(host, POWER_OFF);
+		hi_mci_ctrl_power(host, POWER_OFF, FORCE_DISABLE);
 	}
-
-	return 0;
 }
 
 #ifdef CONFIG_PM

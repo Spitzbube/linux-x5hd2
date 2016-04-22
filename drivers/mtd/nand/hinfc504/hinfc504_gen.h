@@ -9,7 +9,8 @@
 #define HINFC504_GENH
 /******************************************************************************/
 
-#include "../hinfc_gen.h"
+#include <hinfc_gen.h>
+#include "hinfc504.h"
 
 enum hinfc504_ecc_reg {
 	hinfc504_ecc_none    = 0x00,
@@ -29,13 +30,13 @@ enum hinfc504_page_reg {
 	hinfc504_pagesize_16K   = 0x04,
 };
 
-enum hinfc504_page_reg hinfc504_page_type2reg(int type);
+int hinfc504_get_pagesize(struct hinfc_host *host);
 
-int hinfc504_page_reg2type(enum hinfc504_page_reg reg);
+void hinfc504_set_pagesize(struct hinfc_host *host, int pagesize);
 
-enum hinfc504_ecc_reg hinfc504_ecc_type2reg(int type);
+int hinfc504_get_ecctype(struct hinfc_host *host);
 
-int hinfc504_ecc_reg2type(enum hinfc504_ecc_reg reg);
+void hinfc504_set_ecctype(struct hinfc_host *host, int ecctype);
 
 /******************************************************************************/
 #endif /* HINFC504_GENH */

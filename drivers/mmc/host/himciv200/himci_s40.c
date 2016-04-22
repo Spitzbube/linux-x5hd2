@@ -1,4 +1,5 @@
 #define SDIO_REG_BASE_CRG               IO_ADDRESS(0xF8A22000)
+#define SD_LDO_BASE_CRG                 IO_ADDRESS(0xF8A2011c)
 
 /* SDIO0 REG */
 #define PERI_CRG39			0x9C
@@ -73,14 +74,25 @@ static void hi_mci_sys_ctrl_init(struct himci_host *host,
 
 	if ((SDIO_REG_BASE_CRG + PERI_CRG39) == (unsigned int)host_crg_addr) {
 		/* enable SDIO clock */
-		tmp_reg = himci_readl(host_crg_addr);
+		if ((_HI3719MV100 == get_chipid()) || (_HI3718MV100 == get_chipid())) {
+			tmp_reg = himci_readl(host_crg_addr);
 
-		tmp_reg &= ~SDIO0_CLK_SEL_MASK;
-		tmp_reg &= ~SDIO0_DRV_PS_SEL_MASK;
-		tmp_reg &= ~SDIO0_SAP_PS_SEL_MASK;
-		tmp_reg |= SDIO0_CLK_SEL_50M | SDIO0_DRV_PS_SEL_135
-			| SDIO0_SAP_PS_SEL_90;
-		himci_writel(tmp_reg, host_crg_addr);
+			tmp_reg &= ~SDIO0_CLK_SEL_MASK;
+			tmp_reg &= ~SDIO0_DRV_PS_SEL_MASK;
+			tmp_reg &= ~SDIO0_SAP_PS_SEL_MASK;
+			tmp_reg |= SDIO0_CLK_SEL_50M | SDIO0_DRV_PS_SEL_135
+				| SDIO0_SAP_PS_SEL_45;
+			himci_writel(tmp_reg, host_crg_addr);
+		} else {
+			tmp_reg = himci_readl(host_crg_addr);
+
+			tmp_reg &= ~SDIO0_CLK_SEL_MASK;
+			tmp_reg &= ~SDIO0_DRV_PS_SEL_MASK;
+			tmp_reg &= ~SDIO0_SAP_PS_SEL_MASK;
+			tmp_reg |= SDIO0_CLK_SEL_50M | SDIO0_DRV_PS_SEL_135
+				| SDIO0_SAP_PS_SEL_90;
+			himci_writel(tmp_reg, host_crg_addr);
+		}
 
 		/* SDIO soft reset */
 		tmp_reg = himci_readl(host_crg_addr);
@@ -153,4 +165,16 @@ static void hi_mci_sys_ctrl_suspend(struct himci_host *host,
 		himci_writel(tmp_reg, host_crg_addr);
 		return;
 	}
+}
+
+static void himci_ldo_config(unsigned int flag)
+{
+	if (flag == 0) {
+		/* 3.3v output */
+		himci_writel(0x60, SD_LDO_BASE_CRG);
+	} else {
+		/* 1.8v output */
+		himci_writel(0x20, SD_LDO_BASE_CRG);
+	}
+
 }

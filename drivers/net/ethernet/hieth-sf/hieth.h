@@ -67,7 +67,7 @@
 #define DOWN_PORT	1
 
 struct hieth_netdev_local {
-	unsigned long iobase;	       /* virtual io addr */
+	void __iomem * iobase;	       /* virtual io addr */
 	unsigned long iobase_phys;     /* physical io addr */
 	int port;		       /* 0 => up port, 1 => down port */
 
@@ -85,7 +85,16 @@ struct hieth_netdev_local {
 		int hw_xmitq;
 	} depth;
 
+	struct {
+		unsigned long rx_pool_dry_times;
+	} stat;
+
 #define SKB_SIZE		(HIETH_MAX_FRAME_SIZE)
+	struct rx_skb_pool{
+		struct sk_buff* sk_pool[CONFIG_HIETH_MAX_RX_POOLS];	/*skb pool*/
+		int next_free_skb;	/*next free skb*/
+	}rx_pool;
+
 	struct tasklet_struct bf_recv;
 
 	char phy_name[MII_BUS_ID_SIZE];
@@ -96,6 +105,11 @@ struct hieth_netdev_local {
 	unsigned long lockflags;
 };
 
+struct hisf_gpio {
+	void __iomem * gpio_base;
+	u32 gpio_bit;
+};
+
 /* ***********************************************************
  *
  * Only for internal used!
@@ -104,10 +118,10 @@ struct hieth_netdev_local {
  */
 
 /* read/write IO */
-#define hieth_readl(ld, ofs) ({ unsigned long reg=readl((ld)->iobase + (ofs)); \
+#define hieth_readl(ld, ofs) ({ unsigned long reg=readl((void __iomem *)((ld)->iobase + (ofs))); \
 		hieth_trace(2, "readl(0x%04X) = 0x%08lX", (ofs), reg); \
 		reg; })
-#define hieth_writel(ld, v, ofs) do{ writel(v, (ld)->iobase + (ofs)); \
+#define hieth_writel(ld, v, ofs) do{ writel(v, (void __iomem *)((ld)->iobase + (ofs))); \
 	hieth_trace(2, "writel(0x%04X) = 0x%08lX", (ofs), (unsigned long)(v)); \
 }while(0)
 

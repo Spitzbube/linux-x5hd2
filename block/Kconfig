@@ -89,7 +89,7 @@ config BLK_DEV_INTEGRITY
 
 config BLK_DEV_THROTTLING
 	bool "Block layer bio throttling support"
-	depends on BLK_CGROUP=y && EXPERIMENTAL
+	depends on BLK_CGROUP=y
 	default n
 	---help---
 	Block layer bio throttling support. It can be used to limit
@@ -109,7 +109,7 @@ config PART_CHANGE
 	bool "Support change partition by file '/proc/partchange'"
 	default y
 	---help---
-	Support change partition by file '/proc/partchange'
+	  Support change partition by file '/proc/partchange'
 
 menu "Partition Types"
 

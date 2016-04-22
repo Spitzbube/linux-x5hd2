@@ -21,11 +21,15 @@
 #define _HI3719CV100                             (0x0837160200LL)
 #define _HI3718CV100                             (0x1037160200LL)
 
-#define _HI3719MV100_A                           (0x1E37160200LL)
-#define _HI3719MV100_A_MASK                      (0xFEFFFFFFFFLL)
+#define _HI3716MV400                             (0x1C37160200LL)
+#define _HI3716MV400_MASK                        (0xFEFFFFFFFFLL)
+
+#define _HI3719MV100A                            (0x1E37160200LL)
+#define _HI3719MV100A_MASK                       (0xFEFFFFFFFFLL)
 
 #define _HI3719MV100                             (0x0037190100LL)
 #define _HI3718MV100                             (0x0437190100LL)
+#define _HI3718MV100_MASK                        (0xFEFFFFFFFFLL)
 
 void get_clock(unsigned int *cpu, unsigned int *timer);
 

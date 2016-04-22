@@ -105,7 +105,7 @@ static int mtd_add_part(int slot, struct cmdline_subpart *subpart, void *param)
 
 int mtd_part_change(struct cmdline_parts *parts)
 {
-	int ret;
+	int ret = -ENODEV;
 	struct mtd_info *mtd;
 	int nr_parts = parts->nr_subparts;
 	struct mtd_partition *mtdparts;
@@ -133,5 +133,5 @@ int mtd_part_change(struct cmdline_parts *parts)
 	}
 
 	kfree(mtdparts);
-	return 0;
+	return ret;
 }

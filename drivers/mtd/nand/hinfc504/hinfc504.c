@@ -30,23 +30,6 @@ static struct read_retry_t *read_retry_list[] = {
 };
 /*****************************************************************************/
 
-static unsigned int get_bits(unsigned char byte)
-{
-	int ix = 0;
-	int num = 0;
-
-	if (byte == 0xFF) return 8;
-	if (!byte) return 0;
-
-	while (ix++ < 8) {
-		if ((byte & 1))
-			num++;
-		byte = (byte >> 1);
-	}
-	return num;
-}
-/*****************************************************************************/
-
 static void hinfc504_dma_transfer(struct hinfc_host *host, int todev)
 {
 	unsigned long reg_val;
@@ -115,7 +98,7 @@ static void hinfc504_dma_transfer(struct hinfc_host *host, int todev)
 			timeout--;
 		}
 		if (!timeout)
-			PR_BUG("Wait DMA finish timeout.\n");
+			hinfc_pr_bug("Wait DMA finish timeout.\n");
 	} while (0);
 }
 /*****************************************************************************/
@@ -213,11 +196,9 @@ void hinfc504_cmd_ctrl(struct mtd_info *mtd, int dat, unsigned int ctrl)
 static int hinfc504_send_cmd_pageprog(struct hinfc_host *host)
 {
 	if (*host->bbm != 0xFF && *host->bbm != 0x00)
-		pr_warning("WARNING: attempt to write an invalid bbm. "
-			   "page: 0x%08x, mark: 0x%02x, "
-			   "current process(pid): %s(%d).",
-			   GET_PAGE_INDEX(host), *host->bbm,
-			   current->comm, current->pid);
+		pr_warn("Attempt to write an invalid bbm. page: 0x%08x, mark: 0x%02x, current process(pid): %s(%d).\n",
+			GET_PAGE_INDEX(host), *host->bbm,
+			current->comm, current->pid);
 
 	host->enable_ecc_randomizer(host, ENABLE, ENABLE);
 
@@ -230,7 +211,7 @@ static int hinfc504_send_cmd_pageprog(struct hinfc_host *host)
 		NAND_CMD_PAGEPROG << 8 | NAND_CMD_SEQIN,
 		HINFC504_CMD);
 
-	if (IS_RANDOMIZER(host))
+	if (IS_NAND_RANDOM(host))
 		*host->epm = host->epmvalue;
 
 	hinfc504_dma_transfer(host, 1);
@@ -260,7 +241,7 @@ static int hinfc504_get_data_status(struct hinfc_host *host)
 	}
 
 	/* it is an empty page */
-	if (*host->epm != host->epmvalue && IS_RANDOMIZER(host))
+	if (*host->epm != host->epmvalue && IS_NAND_RANDOM(host))
 		return NAND_EMPTY_PAGE;
 
 	return NAND_VALID_DATA;
@@ -277,35 +258,15 @@ static int hinfc504_do_read_retry(struct hinfc_host *host)
 			HINFC504_INTCLR);
 
 		host->enable_ecc_randomizer(host, DISABLE, DISABLE);
-
-		/* check whether it is toshiba chip */
-		if (host->read_retry->type == NAND_RR_TOSHIBA_24nm) {
-
-			hinfc_write(host, HINFC_CMD_SEQ(0x5C, 0xC5),
-				HINFC504_CMD);
-			hinfc_write(host,
-				HINFC504_WRITE_2CMD_0ADD_NODATA,
-				HINFC504_OP);
-			WAIT_CONTROLLER_FINISH();
-		}
-
 		host->read_retry->set_rr_param(host, ix);
 
-		/* check whether it is toshiba chip */
-		if (host->read_retry->type == NAND_RR_TOSHIBA_24nm) {
-			hinfc_write(host, HINFC_CMD_SEQ(0x26, 0x5D),
-				HINFC504_CMD);
-			hinfc_write(host,
-				HINFC504_WRITE_2CMD_0ADD_NODATA,
-				HINFC504_OP);
-			WAIT_CONTROLLER_FINISH();
-		}
-
-		host->enable_ecc_randomizer(host, DISABLE, ENABLE);
+		/* enable ecc and randomizer */
+		host->enable_ecc_randomizer(host, ENABLE, ENABLE);
 
 		hinfc_write(host, HINFC504_INTCLR_UE | HINFC504_INTCLR_CE,
 			HINFC504_INTCLR);
-		hinfc_write(host, host->NFC_CON, HINFC504_CON);/* enable ecc */
+		// TODO: need update
+		hinfc_write(host, host->NFC_CON, HINFC504_CON);
 		hinfc_write(host, host->addr_value[0] & 0xffff0000,
 			HINFC504_ADDRL);
 		hinfc_write(host, host->addr_value[1], HINFC504_ADDRH);
@@ -358,11 +319,11 @@ static int hinfc504_send_cmd_readstart(struct hinfc_host *host)
 	SET_UC_ECC(host,
 		(hinfc_read(host, HINFC504_INTS) & HINFC504_INTS_UE));
 
-	if (host->read_retry || IS_RANDOMIZER(host)) {
+	if (host->read_retry || IS_NAND_RANDOM(host)) {
 		int status = hinfc504_get_data_status(host);
 
 		if (status == NAND_EMPTY_PAGE) {
-			if (IS_RANDOMIZER(host))
+			if (IS_NAND_RANDOM(host))
 				memset(host->buffer, 0xFF,
 				       host->pagesize + host->oobsize);
 			SET_EMPTY_PAGE(host);
@@ -427,7 +388,6 @@ static int hinfc504_send_cmd_readid(struct hinfc_host *host)
 		HINFC504_OP_CMD1_EN
 		| HINFC504_OP_ADDR_EN
 		| HINFC504_OP_READ_DATA_EN
-		| HINFC504_OP_WAIT_READY_EN
 		| ((host->chipselect & HINFC504_OP_NF_CS_MASK)
 			<< HINFC504_OP_NF_CS_SHIFT)
 		| (1 << HINFC504_OP_ADDR_CYCLE_SHIFT),
@@ -446,7 +406,7 @@ static int hinfc504_enable_ecc_randomizer(struct hinfc_host *host,
 {
 	unsigned int regval;
 
-	if (IS_RANDOMIZER(host)) {
+	if (IS_NAND_RANDOM(host)) {
 		regval = hinfc_read(host, HINFC504_RANDOMIZER);
 		if (randomizer_en)
 			regval |= HINFC504_RANDOMIZER_ENABLE;
@@ -469,7 +429,7 @@ static int hinfc600_enable_ecc_randomizer(struct hinfc_host *host,
 {
 	unsigned int nfc_con;
 
-	if (IS_RANDOMIZER(host)) {
+	if (IS_NAND_RANDOM(host)) {
 		if (randomizer_en) {
 			host->NFC_CON |= HINFC600_CON_RANDOMIZER_EN;
 			host->NFC_CON_ECC_NONE |= HINFC600_CON_RANDOMIZER_EN;
@@ -496,7 +456,6 @@ static int hinfc504_send_cmd_status(struct hinfc_host *host)
 	hinfc_write(host,
 		HINFC504_OP_CMD1_EN
 		| HINFC504_OP_READ_DATA_EN
-		| HINFC504_OP_WAIT_READY_EN
 		| ((host->chipselect & HINFC504_OP_NF_CS_MASK)
 			<< HINFC504_OP_NF_CS_SHIFT),
 		HINFC504_OP);
@@ -540,7 +499,7 @@ void hinfc504_select_chip(struct mtd_info *mtd, int chipselect)
 		return;
 
 	if (chipselect > CONFIG_HINFC504_MAX_CHIP)
-		PR_BUG("invalid chipselect: %d\n", chipselect);
+		hinfc_pr_bug("invalid chipselect: %d\n", chipselect);
 
 	host->chipselect = chipselect;
 }
@@ -606,36 +565,36 @@ static struct nand_ecclayout nand_ecc_2K_1bit =
 };
 /*****************************************************************************/
 
-static struct nand_config_table hinfc504_soft_auto_config_table[] =
+static struct nand_ctrl_info_t hinfc504_soft_auto_config_table[] =
 {
-	{NAND_PAGE_16K, NAND_ECC_40BIT,  1200 /*1152*/, &nand_ecc_default},
-	{NAND_PAGE_16K, NAND_ECC_NONE,   32 , &nand_ecc_default},
+	{SZ_16K, NAND_ECC_40BIT,   1200 /*1152*/, &nand_ecc_default},
+	{SZ_16K, NAND_ECC_NONE,    32 , &nand_ecc_default},
 
-	{NAND_PAGE_8K, NAND_ECC_40BIT,   600 /*592*/, &nand_ecc_default},
-	{NAND_PAGE_8K, NAND_ECC_24BIT,   368, &nand_ecc_default},
-	{NAND_PAGE_8K, NAND_ECC_NONE,    32,  &nand_ecc_default},
+	{SZ_8K, NAND_ECC_40BIT,    600 /*592*/, &nand_ecc_default},
+	{SZ_8K, NAND_ECC_24BIT,    368, &nand_ecc_default},
+	{SZ_8K, NAND_ECC_NONE,     32,  &nand_ecc_default},
 
-	{NAND_PAGE_4K, NAND_ECC_24BIT,   200, &nand_ecc_default},
-	{NAND_PAGE_4K, NAND_ECC_4BIT,    128 /*104*/, &nand_ecc_default},
-	{NAND_PAGE_4K, NAND_ECC_1BIT,    128, &nand_ecc_default},
-	{NAND_PAGE_4K, NAND_ECC_NONE,    32,  &nand_ecc_default},
+	{SZ_4K, NAND_ECC_24BIT,    200, &nand_ecc_default},
+	{SZ_4K, NAND_ECC_4BIT_512, 128 /*104*/, &nand_ecc_default},
+	{SZ_4K, NAND_ECC_1BIT_512, 128, &nand_ecc_default},
+	{SZ_4K, NAND_ECC_NONE,     32,  &nand_ecc_default},
 
-	{NAND_PAGE_2K, NAND_ECC_24BIT,   128 /*116*/, &nand_ecc_default},
-	{NAND_PAGE_2K, NAND_ECC_4BIT,    64,  &nand_ecc_default},
-	{NAND_PAGE_2K, NAND_ECC_1BIT,    64,  &nand_ecc_2K_1bit},
-	{NAND_PAGE_2K, NAND_ECC_NONE,    32,  &nand_ecc_default},
+	{SZ_2K, NAND_ECC_24BIT,    128 /*116*/, &nand_ecc_default},
+	{SZ_2K, NAND_ECC_4BIT_512, 64,  &nand_ecc_default},
+	{SZ_2K, NAND_ECC_1BIT_512, 64,  &nand_ecc_2K_1bit},
+	{SZ_2K, NAND_ECC_NONE,     32,  &nand_ecc_default},
 
 	{0,0,0,NULL},
 };
 /*****************************************************************************/
 /* used the best correct arithmetic. */
-struct nand_config_table *hinfc504_get_best_ecc(struct mtd_info *mtd)
+struct nand_ctrl_info_t *hinfc504_get_best_ecc(struct mtd_info *mtd)
 {
-	struct nand_config_table *best = NULL;
-	struct nand_config_table *config = hinfc504_soft_auto_config_table;
+	struct nand_ctrl_info_t *best = NULL;
+	struct nand_ctrl_info_t *config = hinfc504_soft_auto_config_table;
 
 	for (; config->layout; config++) {
-		if (nandpage_type2size(config->pagetype) != mtd->writesize)
+		if (config->pagesize != mtd->writesize)
 			continue;
 
 		if (mtd->oobsize < config->oobsize)
@@ -646,25 +605,22 @@ struct nand_config_table *hinfc504_get_best_ecc(struct mtd_info *mtd)
 	}
 
 	if (!best)
-		PR_BUG(ERSTR_DRIVER
-		       "Driver does not support the pagesize(%d) and oobsize(%d).\n",
-		       mtd->writesize, mtd->oobsize);
+		hinfc_pr_bug(ERSTR_DRIVER "Driver does not support the pagesize(%d) and oobsize(%d).\n",
+			     mtd->writesize, mtd->oobsize);
 
 	return best;
 }
 /*****************************************************************************/
 /* force the pagesize and ecctype */
-struct nand_config_table *hinfc504_force_ecc(struct mtd_info *mtd, int pagetype,
+struct nand_ctrl_info_t *hinfc504_force_ecc(struct mtd_info *mtd, int pagesize,
 					    int ecctype, char *cfgmsg,
 					    int allow_pagediv)
 {
-	int pagesize;
-
-	struct nand_config_table *fit = NULL;
-	struct nand_config_table *config = hinfc504_soft_auto_config_table;
+	struct nand_ctrl_info_t *fit = NULL;
+	struct nand_ctrl_info_t *config = hinfc504_soft_auto_config_table;
 
 	for (; config->layout; config++) {
-		if (config->pagetype == pagetype
+		if (config->pagesize == pagesize
 			&& config->ecctype == ecctype) {
 			fit = config;
 			break;
@@ -672,34 +628,23 @@ struct nand_config_table *hinfc504_force_ecc(struct mtd_info *mtd, int pagetype,
 	}
 
 	if (!fit) {
-		PR_BUG(ERSTR_DRIVER
-		       "Driver(%s mode) does not support this Nand Flash "
-		       "pagesize:%s, ecctype:%s\n",
-		       cfgmsg,
-		       nand_page_name(pagetype),
-		       nand_ecc_name(ecctype));
+		hinfc_pr_bug(ERSTR_DRIVER "Driver(%s mode) does not support this Nand Flash pagesize:%d, ecctype:%s\n",
+			     cfgmsg, pagesize, nand_ecc_name(ecctype));
 		return NULL;
 	}
 
-	pagesize = nandpage_type2size(pagetype);
 	if ((pagesize != mtd->writesize)
 		&& (pagesize > mtd->writesize || !allow_pagediv)) {
-		PR_BUG(ERSTR_HARDWARE
-		       "Hardware (%s mode) configure pagesize %d, "
-		       "but the Nand Flash pageszie is %d\n",
-		       cfgmsg,
-		       pagesize,
-		       mtd->writesize);
+		hinfc_pr_bug(ERSTR_HARDWARE "Hardware (%s mode) configure pagesize %d, but the Nand Flash pageszie is %d\n",
+			     cfgmsg, pagesize, mtd->writesize);
 		return NULL;
 	}
 
 	if (fit->oobsize > mtd->oobsize) {
-		PR_BUG(ERSTR_HARDWARE
-		       "(%s mode) The Nand Flash offer space area is %d bytes, "
-		       "but the controller request %d bytes in ecc %s. "
-		       "Please make sure the hardware ECC configuration is correct.",
-		       cfgmsg, mtd->oobsize, fit->oobsize,
-		       nand_ecc_name(ecctype));
+		hinfc_pr_bug(ERSTR_HARDWARE "(%s mode) The Nand Flash offer space area is %d bytes, but the controller request %d bytes in ecc %s. "
+			     "Please make sure the hardware ECC configuration is correct.",
+			     cfgmsg, mtd->oobsize, fit->oobsize,
+			     nand_ecc_name(ecctype));
 		return NULL;
 	}
 
@@ -730,12 +675,12 @@ __tagtable(0x48694E77, parse_nand_param);
 /*****************************************************************************/
 
 static int hinfc504_ecc_probe(struct mtd_info *mtd, struct nand_chip *chip,
-			      struct nand_flash_dev_ex *flash_dev_ex)
+			      struct nand_dev_t *nand_dev)
 {
+	int pagesize;
 	int ecctype;
-	int pagetype;
 	char *start_type = "unknown";
-	struct nand_config_table *best = NULL;
+	struct nand_ctrl_info_t *best = NULL;
 	struct hinfc_host *host = chip->priv;
 
 #ifdef CONFIG_HINFC504_AUTO_PAGESIZE_ECC
@@ -748,11 +693,10 @@ static int hinfc504_ecc_probe(struct mtd_info *mtd, struct nand_chip *chip,
 #  error you SHOULD NOT define CONFIG_HINFC504_AUTO_PAGESIZE_ECC and CONFIG_HINFC504_HARDWARE_PAGESIZE_ECC at the same time
 #  endif
 
-	ecctype = hinfc504_ecc_reg2type((host->NFC_CON >> HINFC504_CON_ECCTYPE_SHIFT)
-		& HINFC504_CON_ECCTYPE_MASK);
-	pagetype = hinfc504_page_reg2type((host->NFC_CON >> HINFC504_CON_PAGEISZE_SHIFT)
-		& HINFC504_CON_PAGESIZE_MASK);
-	best = hinfc504_force_ecc(mtd, pagetype, ecctype, "hardware config", 0);
+	pagesize = hinfc504_get_pagesize(host);
+	ecctype = hinfc504_get_ecctype(host);
+
+	best = hinfc504_force_ecc(mtd, pagesize, ecctype, "hardware config", 0);
 	start_type = "Hardware";
 
 #endif /* CONFIG_HINFC504_HARDWARE_PAGESIZE_ECC */
@@ -765,35 +709,37 @@ static int hinfc504_ecc_probe(struct mtd_info *mtd, struct nand_chip *chip,
 #  error you SHOULD NOT define CONFIG_HINFC504_PAGESIZE_AUTO_ECC_NONE and CONFIG_HINFC504_HARDWARE_PAGESIZE_ECC at the same time
 #  endif
 
-	pagetype = nandpage_size2type(mtd->writesize);
+	pagesize = mtd->writesize;
 	ecctype = NAND_ECC_NONE;
-	best = hinfc504_force_ecc(mtd, pagetype, ecctype, "force config", 0);
+	best = hinfc504_force_ecc(mtd, pagesize, ecctype, "force config", 0);
 	start_type = "AutoForce";
 
 #endif /* CONFIG_HINFC504_PAGESIZE_AUTO_ECC_NONE */
 
 	if (!best)
-		PR_BUG(ERSTR_HARDWARE
-		       "Please configure Nand Flash pagesize and ecctype!\n");
+		hinfc_pr_bug(ERSTR_HARDWARE "Please configure Nand Flash pagesize and ecctype!\n");
 
-	if ((IS_RANDOMIZER(flash_dev_ex) && !(IS_RANDOMIZER(host))))
-		PR_BUG("Hardware is not configure randomizer, "
-		       "but it is more suitable for this Nand Flash. "
-		       "Update fastboot will resolve this problem.\n");
+	/* only in case fastboot check randomizer failed. 
+	 * Update fastboot or configure hardware randomizer pin fix this problem.
+	 */
+	if (IS_NAND_RANDOM(nand_dev) && !(IS_NAND_RANDOM(host)))
+		hinfc_pr_bug(ERSTR_HARDWARE "Hardware is not configure randomizer, but it is more suitable for this Nand Flash. "
+			     "1. Please configure hardware randomizer PIN. "
+			     "2. Please updata fastboot.\n");
 
 	if (best->ecctype != NAND_ECC_NONE)
 		mtd->oobsize = best->oobsize;
 	chip->ecc.layout = best->layout;
 
 	host->ecctype  = best->ecctype;
-	host->pagesize = nandpage_type2size(best->pagetype);
+	host->pagesize = best->pagesize;
 	host->oobsize  = mtd->oobsize;
 	host->block_page_mask = ((mtd->erasesize / mtd->writesize) - 1);
 
 	if (host->ecctype == NAND_ECC_24BIT) {
-		if (host->pagesize == _4K)
+		if (host->pagesize == SZ_4K)
 			host->n24bit_ext_len = 0x03; /* 8bytes; */
-		else if (host->pagesize == _8K)
+		else if (host->pagesize == SZ_8K)
 			host->n24bit_ext_len = 0x01; /* 4bytes; */
 	}
 	host->dma_oob = host->dma_buffer + host->pagesize;
@@ -803,24 +749,13 @@ static int hinfc504_ecc_probe(struct mtd_info *mtd, struct nand_chip *chip,
 	host->epm = (unsigned short *)(host->buffer
 		+ host->pagesize + chip->ecc.layout->oobfree[0].offset + 28);
 
-	host->NFC_CON  = (HINFC504_CON_OP_MODE_NORMAL
-		| ((hinfc504_page_type2reg(best->pagetype) &
-		    HINFC504_CON_PAGESIZE_MASK)
-		   << HINFC504_CON_PAGEISZE_SHIFT)
-		| HINFC504_CON_READY_BUSY_SEL
-		| ((hinfc504_ecc_type2reg(best->ecctype) &
-		    HINFC504_CON_ECCTYPE_MASK)
-		   << HINFC504_CON_ECCTYPE_SHIFT));
+	hinfc504_set_pagesize(host, best->pagesize);
 
-	host->NFC_CON_ECC_NONE  = (HINFC504_CON_OP_MODE_NORMAL
-		| ((hinfc504_page_type2reg(best->pagetype) &
-		    HINFC504_CON_PAGESIZE_MASK)
-		   << HINFC504_CON_PAGEISZE_SHIFT)
-		| HINFC504_CON_READY_BUSY_SEL);
+	hinfc504_set_ecctype(host, best->ecctype);
 
 	if (mtd->writesize > NAND_MAX_PAGESIZE
 		|| mtd->oobsize > NAND_MAX_OOBSIZE) {
-		PR_BUG(ERSTR_DRIVER
+		hinfc_pr_bug(ERSTR_DRIVER
 		       "Driver does not support this Nand Flash. "
 		       "Please increase NAND_MAX_PAGESIZE and NAND_MAX_OOBSIZE.\n");
 	}
@@ -835,32 +770,27 @@ static int hinfc504_ecc_probe(struct mtd_info *mtd, struct nand_chip *chip,
 		chip->chipsize = chip->chipsize >> shift;
 		mtd->erasesize = mtd->erasesize >> shift;
 		mtd->writesize = host->pagesize;
-		PR_MSG("Nand divide into 1/%u\n", (1 << shift));
+		hinfc_pr_msg("Nand divide into 1/%u\n", (1 << shift));
 	}
 
-	flash_dev_ex->start_type = start_type;
-	flash_dev_ex->ecctype = host->ecctype;
-	/*
-	 * host->flags should be the same as flash_dev_ex->flags
-	 * we should check it first
-	 */
-	flash_dev_ex->flags |= host->flags;
-	host->flags = flash_dev_ex->flags;
+	nand_dev->start_type = start_type;
+	nand_dev->ecctype = host->ecctype;
+
+	host->flags |= IS_NAND_RANDOM(nand_dev);
 
 	host->read_retry = NULL;
-	if (flash_dev_ex->read_retry_type != NAND_RR_NONE) {
+	if (nand_dev->read_retry_type != NAND_RR_NONE) {
 		struct read_retry_t **rr;
 		for (rr = read_retry_list; rr; rr++) {
-			if ((*rr)->type == flash_dev_ex->read_retry_type) {
+			if ((*rr)->type == nand_dev->read_retry_type) {
 				host->read_retry = *rr;
 				break;
 			}
 		}
 
 		if (!host->read_retry) {
-			PR_BUG(ERSTR_DRIVER
-			        "This Nand Flash need to enable the 'read retry' feature. "
-			        "but the driver dose not offer the feature");
+			hinfc_pr_bug(ERSTR_DRIVER "This Nand Flash need to enable the 'read retry' feature. "
+				     "but the driver dose not offer the feature");
 		}
 
 		if (nand_otp_len) {
@@ -872,10 +802,9 @@ static int hinfc504_ecc_probe(struct mtd_info *mtd, struct nand_chip *chip,
 	 * If it want to support the 'read retry' feature, the 'randomizer'
 	 * feature must be support first.
 	 */
-	if (host->read_retry && !IS_RANDOMIZER(host)) {
-		PR_BUG(ERSTR_HARDWARE
-		       "This Nand flash need to enable 'randomizer' feature. "
-		       "Please configure hardware randomizer PIN.");
+	if (host->read_retry && !IS_NAND_RANDOM(host)) {
+		hinfc_pr_bug(ERSTR_HARDWARE "This Nand flash need to enable 'randomizer' feature. "
+			     "Please configure hardware randomizer PIN.");
 	}
 
 	hinfc504_dbg_init(host);
@@ -892,10 +821,10 @@ static int hinfc504_get_randomizer(struct hinfc_host *host)
 	if (regval & HINFC504_RANDOMIZER_PAD)
 		host->flags |= NAND_RANDOMIZER;
 
-	regval |= (IS_RANDOMIZER(host) ? HINFC504_RANDOMIZER_ENABLE : 0);
+	regval |= (IS_NAND_RANDOM(host) ? HINFC504_RANDOMIZER_ENABLE : 0);
 	hinfc_write(host, regval, HINFC504_RANDOMIZER);
 
-	return IS_RANDOMIZER(host);
+	return IS_NAND_RANDOM(host);
 }
 /*****************************************************************************/
 
@@ -907,7 +836,7 @@ static int hinfc600_get_randomizer(struct hinfc_host *host)
 	if (regval & HINFC600_BOOT_CFG_RANDOMIZER_PAD)
 		host->flags |= NAND_RANDOMIZER;
 
-	return IS_RANDOMIZER(host);
+	return IS_NAND_RANDOM(host);
 }
 /*****************************************************************************/
 
@@ -960,7 +889,7 @@ int hinfc504_nand_init(struct hinfc_host *host, struct nand_chip *chip)
 		host->epmvalue = 0xffff;
 	}
 
-	nand_oob_resize = hinfc504_ecc_probe;
+	hinfc_param_adjust = hinfc504_ecc_probe;
 
 	return 0;
 }

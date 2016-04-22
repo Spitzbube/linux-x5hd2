@@ -136,7 +136,8 @@ char *hisfc350_get_clock_str(unsigned int clk_reg)
 
 		for (ix = 0; clk_str[ix] < 16; ix += 2) {
 			if (clk_reg == clk_str[ix]) {
-				sprintf(buffer, "%dM", clk_str[ix+1]);
+				snprintf(buffer, sizeof(buffer), "%dM",
+					clk_str[ix+1]);
 				break;
 			}
 		}
@@ -155,7 +156,8 @@ char *hisfc350_get_clock_str(unsigned int clk_reg)
 
 		for (ix = 0; clk_str[ix] != 0; ix += 2) {
 			if (clk_reg == clk_str[ix]) {
-				sprintf(buffer, "%dM", clk_str[ix+1]);
+				snprintf(buffer, sizeof(buffer), "%dM",
+					 clk_str[ix+1]);
 				break;
 			}
 		}

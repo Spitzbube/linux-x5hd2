@@ -6,14 +6,9 @@
  *
 ******************************************************************************/
 
-#include <linux/moduleparam.h>
 #include <linux/vmalloc.h>
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/slab.h>
 #include <linux/debugfs.h>
 #include <asm/uaccess.h>
-#include <linux/mutex.h>
 
 #include "hinfc610_os.h"
 #include "hinfc610.h"
@@ -25,35 +20,42 @@
 
 struct hinfc610_dbg_ecc_count_item_t{
 	unsigned int page;
-	unsigned int ecc_status;    /* the same as host->ecc_status */
+	unsigned int page_status;    /* the same as host->page_status */
 	unsigned short hour;
 	unsigned short min;
 	unsigned short sec;
 	unsigned short msec;
 
-	unsigned char ecc[4];
+	unsigned char ecc[4];  /* it will dynamic malloc in init. */
 };
 
 struct hinfc610_dbg_ecc_count_t {
-
 	struct dentry *dentry;
 	unsigned int index; /* current logs index */
 	int count;          /* number of logs */
 
-	struct hinfc610_ecc_inf_t *ecc_inf;
 	unsigned int offset;
 	unsigned int length;
-	unsigned int pagecount;
+	unsigned int nr_page;
 
 	unsigned char *item;
 
 	unsigned int read_index;
+
+	struct {
+		int uncorrect; /* number of read that ecc uncorrect */
+#define MAX_ECC_DIST         80
+		int statis[81];
+		int section;
+		void (*dump)(struct hinfc_host *host, unsigned char *ecc,
+			     int *max_bitsflags);
+	} ecc;
 };
 
 #define GET_ITEM(_ecc_count, _index)     \
 	((struct hinfc610_dbg_ecc_count_item_t *)((_ecc_count)->item + \
 		((sizeof(struct hinfc610_dbg_ecc_count_item_t) + \
-			(_ecc_count)->ecc_inf->section) * (_index))))
+			(_ecc_count)->ecc.section) * (_index))))
 
 static DEFINE_MUTEX(dbg_ecc_count_mutex);
 static struct hinfc610_dbg_ecc_count_t *dbg_ecc_count = NULL;
@@ -80,17 +82,158 @@ static void do_gettime(unsigned short *hour, unsigned short *min,
 }
 /*****************************************************************************/
 
+static int dbgfs_dump_ecc(struct hinfc610_dbg_ecc_count_t *ecc_count,
+			  char __user *usrbuf, unsigned int count, int withhdr)
+{
+	int len;
+	char *ptr;
+	int ret = 0;
+	unsigned int index;
+	char buf[128] = {0};
+	struct hinfc610_dbg_ecc_count_item_t *item;
+
+	if (withhdr) {
+		ptr = buf;
+
+		ptr += snprintf(ptr, 70,
+			"Parameter: \"offset=%d length=%d\" (offset is page number)\n",
+			ecc_count->offset,
+			ecc_count->length);
+
+		ptr += snprintf(ptr, 50,
+			"  UTC Clock    page          ecc data\n");
+
+		len = ptr - buf;
+		if (copy_to_user(usrbuf, buf, len))
+			return -EFAULT;
+		usrbuf += len;
+		ret += len;
+		count -= len;
+	}
+
+	for (index = ecc_count->read_index;
+	     index != ecc_count->index && count > 80; ++index) {
+		if (index >= CONFIG_HINFC610_DBG_ECC_COUNT_NUM)
+			index = 0;
+
+		item = GET_ITEM(ecc_count, index);
+
+		len = snprintf(buf, sizeof(buf),
+			"%02d:%02d:%02d.%04d  0x%08X    ",
+			item->hour, item->min, item->sec, item->msec,
+			item->page);
+
+		if (copy_to_user(usrbuf, buf, len))
+			return -EFAULT;
+		usrbuf += len;
+		ret += len;
+		count -= len;
+
+		ptr = buf;
+
+		if (IS_PS_BAD_BLOCK(item) || IS_PS_EMPTY_PAGE(item) ||
+		    IS_PS_UN_ECC(item)) {
+			if (IS_PS_BAD_BLOCK(item))
+				ptr += snprintf(ptr, 16, "bad block ");
+			else if (IS_PS_EMPTY_PAGE(item))
+				ptr += snprintf(ptr, 16, "empty page ");
+			else if (IS_PS_UN_ECC(item))
+				ptr += snprintf(ptr, 16, "uncorrect ");
+
+			if (IS_PS_EPM_ERR(item))
+				ptr += snprintf(ptr, 16, "bbm valid ");
+
+			if (IS_PS_BBM_ERR(item))
+				ptr += snprintf(ptr, 16, "epm valid ");
+
+			ptr += snprintf(ptr, 4, "\n");
+		} else {
+			int ix;
+
+			for (ix = 0; ix < ecc_count->ecc.section; ix++)
+				ptr += snprintf(ptr, 16, "%d/", item->ecc[ix]);
+
+			if (IS_PS_EPM_ERR(item))
+				ptr += snprintf(ptr, 12, "epm valid ");
+
+			ptr += snprintf(ptr, 4, "\n");
+		}
+
+		len = ptr - buf;
+		if (copy_to_user(usrbuf, buf, len))
+			return -EFAULT;
+
+		usrbuf += len;
+		ret    += len;
+		count  -= len;
+	}
+
+	ecc_count->read_index = index;
+
+	return ret;
+}
+/*****************************************************************************/
+
+static int dbgfs_dump_ecc_dist(struct hinfc610_dbg_ecc_count_t *ecc_count,
+			       char __user *usrbuf, unsigned int count)
+{
+	int ix;
+	int num;
+	int len;
+	char *ptr;
+	int ret = 0;
+	char buf[128] = {0};
+
+	for (num = MAX_ECC_DIST; num >= 0; num--) {
+		if (ecc_count->ecc.statis[num])
+			break;
+	}
+
+	ptr = buf;
+
+	ptr += snprintf(ptr, 40, "ECC distribution: \n");
+
+	if (ecc_count->ecc.uncorrect)
+		ptr += snprintf(ptr, 40, "  out of range: %d\n",
+				ecc_count->ecc.uncorrect);
+
+	len = ptr - buf;
+	if (copy_to_user(usrbuf, buf, len))
+		return -EFAULT;
+	usrbuf += len;
+	ret += len;
+	count -= len;
+
+	for (ix = 0; ix <= num; ) {
+		int jx;
+		ptr = buf;
+
+		ptr += sprintf(ptr, "  %2d: ", ix);
+
+		for (jx = 0; jx < 4 && ix <= num; jx++, ix++)
+			ptr += sprintf(ptr, "0x%08x ", ecc_count->ecc.statis[ix]);
+
+		ptr += sprintf(ptr, "\n");
+
+		len = ptr - buf;
+		if (copy_to_user(usrbuf, buf, len))
+			return -EFAULT;
+		usrbuf += len;
+		ret += len;
+		count -= len;
+	}
+
+	return ret;
+}
+/*****************************************************************************/
+
 static ssize_t dbgfs_ecc_count_read(struct file *filp, char __user *buffer,
 				    size_t count, loff_t *ppos)
 {
-	int len = 0;
-	char buf[128] = {0};
-	unsigned int read_index;
+	int len;
 	char __user *pusrbuf = buffer;
-	struct hinfc610_dbg_ecc_count_item_t *item;
 
 	if (*ppos == 0) {
-
 		if (dbg_ecc_count->count
 		    < CONFIG_HINFC610_DBG_ECC_COUNT_NUM)
 			dbg_ecc_count->read_index = 0;
@@ -98,77 +241,23 @@ static ssize_t dbgfs_ecc_count_read(struct file *filp, char __user *buffer,
 			dbg_ecc_count->read_index
 				= (dbg_ecc_count->index + 1);
 
-		len = snprintf(buf, sizeof(buf),
-			"Print parameter: \"offset=%d length=%d\"\n",
-			dbg_ecc_count->offset,
-			dbg_ecc_count->length);
-
-		if (copy_to_user(pusrbuf, buf, len))
-			return -EFAULT;
-
-		pusrbuf += len;
-
-		len = snprintf(buf, sizeof(buf),
-			"  UTC Clock    page          ecc data\n");
-
-		if (copy_to_user(pusrbuf, buf, len))
-			return -EFAULT;
-
+		len = count - (pusrbuf - buffer);
+		len = dbgfs_dump_ecc_dist(dbg_ecc_count, pusrbuf, len);
+		if (len < 0)
+			return len;
 		pusrbuf += len;
 
 	} else if (dbg_ecc_count->read_index == dbg_ecc_count->index)
 		return 0;
 
-	for (read_index = dbg_ecc_count->read_index;
-	     (read_index != dbg_ecc_count->index); ++read_index) {
-
-		if (read_index >= CONFIG_HINFC610_DBG_ECC_COUNT_NUM)
-			read_index = 0;
-
-		item = GET_ITEM(dbg_ecc_count, read_index);
-
-		if ((count - (pusrbuf - buffer)) < 80)
-			break;
-
-		len = snprintf(buf, sizeof(buf),
-			"%02d:%02d:%02d.%04d  0x%08X    ",
-			item->hour, item->min, item->sec, item->msec,
-			item->page);
-
-		if (copy_to_user(pusrbuf, buf, len))
-			return -EFAULT;
-
-		pusrbuf += len;
-
-		if (!item->ecc_status) {
-			int ix;
-			char *ptr = buf;
-
-			for (ix = 0; ix < dbg_ecc_count->ecc_inf->section;
-			     ix++)
-				ptr += sprintf(ptr, "%d/", item->ecc[ix]);
-			ptr += sprintf(ptr, "\n");
-			len = (ptr - buf);
-		} else if (item->ecc_status & HINFC610_BAD_BLOCK) {
-			len = sprintf(buf, "bad block\n");
-		} else if (item->ecc_status & HINFC610_EMPTY_PAGE) {
-			len = sprintf(buf, "empty page\n");
-		} else if (item->ecc_status & HINFC610_UC_ECC) {
-			len = sprintf(buf, "uncorrect ecc\n");
-		} else {
-			len = sprintf(buf, "unknown ecc_status 0x%08X\n",
-				      item->ecc_status);
-		}
-
-		if (copy_to_user(pusrbuf, buf, len))
-			return -EFAULT;
-		pusrbuf += len;
-
-	}
-
-	dbg_ecc_count->read_index = read_index;
+	len = count - (pusrbuf - buffer);
+	len = dbgfs_dump_ecc(dbg_ecc_count, pusrbuf, len, (*ppos == 0));
+	if (len < 0)
+		return len;
+	pusrbuf += len;
 
 	*ppos += (pusrbuf - buffer);
+
 	return pusrbuf - buffer;
 }
 /******************************************************************************/
@@ -211,9 +300,7 @@ static ssize_t dbgfs_ecc_count_write(struct file *filp,
 			str = (char *)(buf + pos);
 			value = simple_strtoul(str, &str, 10);
 
-			if (value < 0)
-				value = 0;
-			if (value >= dbg_ecc_count->pagecount)
+			if (value < 0 || value >= dbg_ecc_count->nr_page)
 				value = 0;
 
 			dbg_ecc_count->offset = (value & ~7);
@@ -230,13 +317,13 @@ static ssize_t dbgfs_ecc_count_write(struct file *filp,
 			value = simple_strtoul(str, &str, 10);
 
 			if (value < 0)
-				value = dbg_ecc_count->pagecount;
+				value = dbg_ecc_count->nr_page;
 
 			value = ((value + 7) & ~7);
 
 			if (dbg_ecc_count->offset + value >
-			    dbg_ecc_count->pagecount)
-				value = dbg_ecc_count->pagecount
+			    dbg_ecc_count->nr_page)
+				value = dbg_ecc_count->nr_page
 					- dbg_ecc_count->offset;
 
 			dbg_ecc_count->length = value;
@@ -258,51 +345,45 @@ static struct file_operations dbgfs_ecc_count_fops = {
 	.read  = dbgfs_ecc_count_read,
 	.write = dbgfs_ecc_count_write,
 };
-/*****************************************************************************/
+/******************************************************************************/
 
 static int dbgfs_ecc_count_init(struct dentry *root, struct hinfc_host *host)
 {
 	unsigned int size;
 	unsigned int pagesize;
 	unsigned int chipsize;
-	struct hinfc610_ecc_inf_t *ecc_inf;
 	struct hinfc610_dbg_ecc_count_t *ecc_count;
 
 	if (dbg_ecc_count)
 		return 0;
 
-	ecc_inf = hinfc610_get_ecc_inf(host, host->pagesize, host->ecctype);
-	if (!ecc_inf){
-		printk(KERN_WARNING
-		       "ecc_count: The NAND not support this interface.\n");
-		return -1;
-	}
-
 	size = sizeof(struct hinfc610_dbg_ecc_count_t);
-	size += CONFIG_HINFC610_DBG_ECC_COUNT_NUM *
-		(sizeof(struct hinfc610_dbg_ecc_count_item_t) + ecc_inf->section);
+	size += (CONFIG_HINFC610_DBG_ECC_COUNT_NUM + 1) *
+		(sizeof(struct hinfc610_dbg_ecc_count_item_t) +
+		 host->ecc.section);
 
 	ecc_count = vmalloc(size);
 	if (!ecc_count) {
-		PR_ERR("Can't allocate memory.\n");
+		pr_err("Can't allocate memory.\n");
 		return -ENOMEM;
 	}
 	memset(ecc_count, 0, size);
 
 	ecc_count->item = (char *)ecc_count +
 		sizeof(struct hinfc610_dbg_ecc_count_t);
-	ecc_count->ecc_inf = ecc_inf;
+	ecc_count->ecc.dump = host->ecc.dump;
+	ecc_count->ecc.section = host->ecc.section;
 
 	pagesize  = (host->pagesize >> 10);
 	chipsize = (unsigned int)(host->chip->chipsize >> 10);
-	ecc_count->pagecount = (chipsize / pagesize);
-	ecc_count->length = ecc_count->pagecount;
+	ecc_count->nr_page = (chipsize / pagesize);
+	ecc_count->length = ecc_count->nr_page;
 
 	ecc_count->dentry = debugfs_create_file("ecc_count",
 		S_IFREG | S_IRUSR | S_IWUSR, 
 		root, NULL, &dbgfs_ecc_count_fops);
 	if (!ecc_count->dentry) {
-		PR_ERR("Can't create 'ecc_count' file.\n");
+		pr_err("Can't create 'ecc_count' file.\n");
 		vfree(ecc_count);
 		return -ENOENT;
 	}
@@ -331,6 +412,34 @@ static int dbgfs_ecc_count_uninit(void)
 }
 /*****************************************************************************/
 
+static void dbg_ecc_log(struct hinfc_host *host,
+			struct hinfc610_dbg_ecc_count_item_t *item,
+			struct hinfc610_dbg_ecc_count_t *ecc_count)
+{
+	int ix;
+	unsigned int value;
+
+	item->page_status = host->page_status;
+	ecc_count->ecc.dump(host, item->ecc, NULL);
+
+	for (ix = 0; ix < ecc_count->ecc.section; ix++) {
+		value = item->ecc[ix];
+
+		if (value > MAX_ECC_DIST) {
+			if (!IS_PS_UN_ECC(host))
+				printk(KERN_WARNING "ecc out of range.\n");
+
+			if (IS_PS_BAD_BLOCK(item) || IS_PS_EMPTY_PAGE(item))
+				continue;
+
+			ecc_count->ecc.uncorrect++;
+		} else {
+			ecc_count->ecc.statis[value]++;
+		}
+	}
+}
+/*****************************************************************************/
+
 static void dbg_ecc_count_read(struct hinfc_host *host)
 {
 	unsigned int page;
@@ -354,10 +463,8 @@ static void dbg_ecc_count_read(struct hinfc_host *host)
 	do_gettime(&item->hour, &item->min, &item->sec, &item->msec);
 
 	item->page = page;
-	item->ecc_status = host->ecc_status;
 
-	if (!GET_UC_ECC(host))
-		dbg_ecc_count->ecc_inf->ecc_inf(host, item->ecc);
+	dbg_ecc_log(host, item, dbg_ecc_count);
 
 	if (++dbg_ecc_count->index >= CONFIG_HINFC610_DBG_ECC_COUNT_NUM)
 		dbg_ecc_count->index = 0;
@@ -376,4 +483,3 @@ struct hinfc610_dbg_inf_t hinfc610_dbg_inf_ecc_count = {
 	NULL,
 	NULL,
 };
-/*****************************************************************************/

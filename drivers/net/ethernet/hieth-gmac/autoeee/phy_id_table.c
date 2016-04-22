@@ -69,7 +69,7 @@ static int smsc_lan8740_init(struct phy_device *phy_dev)
 	return eee_type;
 }
 
-#define RTL8211EG_MAC	1
+#define RTL8211EG_MAC	0
 #if RTL8211EG_MAC
 static int rtl8211EG_mac_init(struct phy_device *phy_dev)
 {

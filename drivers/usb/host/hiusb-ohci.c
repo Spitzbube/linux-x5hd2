@@ -10,7 +10,7 @@
 #include <linux/signal.h>
 #include "hiusb.h"
 
-static int __devinit hiusb_ohci_start(struct usb_hcd *hcd)
+static int  hiusb_ohci_start(struct usb_hcd *hcd)
 {
 	struct ohci_hcd	*ohci = hcd_to_ohci(hcd);
 	int ret;
@@ -21,7 +21,7 @@ static int __devinit hiusb_ohci_start(struct usb_hcd *hcd)
 		return ret;
 	ret = ohci_run(ohci);
 	if (ret < 0) {
-		err("can't start %s", hcd->self.bus_name);
+		pr_debug("can't start %s", hcd->self.bus_name);
 		ohci_stop(hcd);
 		return ret;
 	}
@@ -143,9 +143,7 @@ static int hiusb_ohci_hcd_drv_suspend(struct device *dev)
 	struct usb_hcd *hcd = dev_get_drvdata(dev);
 	struct ohci_hcd	*ohci = hcd_to_ohci(hcd);
 	unsigned long flags;
-	int rc;
-
-	rc = 0;
+	int rc = 0;
 
 	/* Root hub was already suspended. Disable irq emission and
 	 * mark HW unaccessible, bail out if RH has been resumed. Use
@@ -178,8 +176,7 @@ static int hiusb_ohci_hcd_drv_resume(struct device *dev)
 
 	hiusb_start_hcd();
 
-	set_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags);
-	ohci_finish_controller_resume(hcd);
+	ohci_resume(hcd, false);
 
 	return 0;
 }

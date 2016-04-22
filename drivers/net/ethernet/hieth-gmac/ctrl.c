@@ -87,19 +87,19 @@ void higmac_hw_phy_gpio_reset(void)
 		gpio_base = IO_ADDRESS(gpio_base);
 
 		/* config gpio[x] dir to output */
-		v = readb(gpio_base + 0x400);
+		v = readb((void __iomem *)(gpio_base + 0x400));
 		v |= (1 << gpio_bit);
-		writeb(v, gpio_base + 0x400);
+		writeb(v, (void __iomem *)(gpio_base + 0x400));
 
 		/* output 1--0--1 */
 		writeb(RESET_DATA << gpio_bit,
-				gpio_base + (4 << gpio_bit));
+				(void __iomem *)(gpio_base + (4 << gpio_bit)));
 		msleep(20);
 		writeb((!RESET_DATA) << gpio_bit,
-				gpio_base + (4 << gpio_bit));
+				(void __iomem *)(gpio_base + (4 << gpio_bit)));
 		msleep(20);
 		writeb(RESET_DATA << gpio_bit,
-				gpio_base + (4 << gpio_bit));
+				(void __iomem *)(gpio_base + (4 << gpio_bit)));
 	}
 }
 
@@ -115,7 +115,9 @@ void higmac_hw_mac_core_init(struct higmac_netdev_local *ld)
 	/* fix bug for udp and ip error check */
 	writel(CONTROL_WORD_CONFIG, ld->gmac_iobase + CONTROL_WORD);
 
-	writel(0x3ff, ld->gmac_iobase + COL_SLOT_TIME);
+	writel(0, ld->gmac_iobase + COL_SLOT_TIME);
+
+	writel(DUPLEX_HALF, ld->gmac_iobase + MAC_DUPLEX_HALF_CTRL);
 
 	/* FIXME: interrupt when rcv packets >= RX_BQ_INT_THRESHOLD */
 	higmac_writel_bits(ld, RX_BQ_INT_THRESHOLD, IN_QUEUE_TH,
@@ -259,6 +261,7 @@ int higmac_xmit_release_skb(struct higmac_netdev_local *ld)
 	struct higmac_desc *tx_rq_desc;
 	dma_addr_t dma_addr;
 	int ret = 0;
+	int release = false;
 
 	tx_rq_wr_offset = higmac_readl(TX_RQ_WR_ADDR);/* logic write */
 	tx_rq_rd_offset = higmac_readl(TX_RQ_RD_ADDR);/* software read */
@@ -313,6 +316,13 @@ next:
 				tx_rq_rd_offset = 0;
 
 		higmac_writel(tx_rq_rd_offset, TX_RQ_RD_ADDR);
+		release = true;
+	}
+
+	if (release == true && netif_queue_stopped(ld->netdev)) {
+		netif_wake_queue(ld->netdev);
+		if (debug(HW_TX_DESC))
+			pr_info("netif_wake_queue(gmac%d)\n", ld->index);
 	}
 
 	return ret;
@@ -335,9 +345,12 @@ int higmac_xmit_real_send(struct higmac_netdev_local *ld, struct sk_buff *skb)
 		tmp = 0;
 	if (tmp == tx_bq_rd_offset || ld->tx_bq.skb[pos]) {
 		if (debug(HW_TX_DESC))
-			pr_err("tx queue is full! tx_bq_rd_offset = 0x%x, "
-				"tx_bq_wr_offset = 0x%x\n",
-					tx_bq_rd_offset, tx_bq_wr_offset);
+			pr_err("tx queue is full! tx_bq: wr=0x%x, rd=0x%x, "
+				"tx_rq: wr=0x%x, rd=0x%x, sf=0x%x, hw=0x%x\n",
+				tx_bq_wr_offset, tx_bq_rd_offset,
+				higmac_readl(TX_RQ_WR_ADDR),
+				higmac_readl(TX_RQ_RD_ADDR),
+				pos, higmac_readl(TX_RQ_WR_ADDR) >> 5);
 		/* we will stop the queue outside of this func */
 		return -EBUSY;
 	}
@@ -355,6 +368,7 @@ int higmac_xmit_real_send(struct higmac_netdev_local *ld, struct sk_buff *skb)
 	tx_bq_desc->skb_buff_addr = skb;
 	tx_bq_desc->data_buff_addr =
 		dma_map_single(ld->dev, skb->data, skb->len, DMA_TO_DEVICE);
+	WARN_ON(dma_mapping_error(ld->dev,tx_bq_desc->data_buff_addr));
 	tx_bq_desc->buffer_len = HIETH_MAX_FRAME_SIZE - 1;
 	tx_bq_desc->data_len = skb->len;
 	tx_bq_desc->fl = DESC_FL_FULL;
@@ -420,6 +434,7 @@ int higmac_feed_hw(struct higmac_netdev_local *ld)
 		rx_fq_desc->data_buff_addr =
 			dma_map_single(ld->dev, skb->data,
 					HIETH_MAX_FRAME_SIZE, DMA_FROM_DEVICE);
+		WARN_ON(dma_mapping_error(ld->dev,rx_fq_desc->data_buff_addr));
 		rx_fq_desc->buffer_len = HIETH_MAX_FRAME_SIZE - 1;
 		rx_fq_desc->data_len = 0;
 		rx_fq_desc->fl = 0;

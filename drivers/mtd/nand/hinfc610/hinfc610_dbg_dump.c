@@ -5,15 +5,9 @@
  *    Create by Czyong 2013-07-04
  *
 ******************************************************************************/
-
-#include <linux/moduleparam.h>
 #include <linux/vmalloc.h>
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/slab.h>
 #include <linux/debugfs.h>
 #include <asm/uaccess.h>
-#include <linux/mutex.h>
 
 #include "hinfc610_os.h"
 #include "hinfc610.h"
@@ -39,7 +33,7 @@ struct hinfc610_dbg_dump_item_t {
 	unsigned long  offset;
 	unsigned long  length;
 
-	char error;
+	char page_status[4];
 	char op;
 
 	unsigned char data[CONFIG_HINFC610_DBG_NAND_LOG_LENGTH];
@@ -105,7 +99,6 @@ static ssize_t dbgfs_dump_read(struct file *filp, char __user *buffer,
 	struct hinfc610_dbg_dump_item_t *logs;
 
 	if (*ppos == 0) {
-
 		if (dbg_dump->count
 		    < CONFIG_HINFC610_DBG_NAND_NUM_OF_LOGS)
 			dbg_dump->read_index = 0;
@@ -114,17 +107,16 @@ static ssize_t dbgfs_dump_read(struct file *filp, char __user *buffer,
 				= (dbg_dump->index + 1);
 
 		len = snprintf(buf, sizeof(buf),
-			       "Print parameter: \"offset=%ld length=%ld\"\n",
-			       dbg_dump->offset,
-			       dbg_dump->length);
+			       "Print parameter: \"offset=%ld length=%ld\" (offset is byte number)\n",
+			       dbg_dump->offset, dbg_dump->length);
 
 		if (copy_to_user(pusrbuf, buf, len))
 			return -EFAULT;
 
 		pusrbuf += len;
 
-		len += snprintf(buf, sizeof(buf),
-			"  UTC Clock   op cylce  page-offset     data\n");
+		len = snprintf(buf, sizeof(buf),
+			       "  UTC Clock   op cylce  page-offset     data\n");
 
 		if (copy_to_user(pusrbuf, buf, len))
 			return -EFAULT;
@@ -168,7 +160,8 @@ static ssize_t dbgfs_dump_read(struct file *filp, char __user *buffer,
 
 			int ix;
 
-			len = snprintf(buf, sizeof(buf), " %c ", logs->error);
+			len = snprintf(buf, sizeof(buf), "%s",
+				       logs->page_status);
 			if (copy_to_user(pusrbuf, buf, len))
 				return -EFAULT;
 			pusrbuf += len;
@@ -280,7 +273,7 @@ static int dbgfs_dump_init(struct dentry *root, struct hinfc_host *host)
 
 	dump = vmalloc(sizeof(struct hinfc610_dbg_dump_t));
 	if (!dump) {
-		PR_ERR("Can't allocate memory.\n");
+		pr_err("Can't allocate memory.\n");
 		return -ENOMEM;
 	}
 	memset(dump, 0, sizeof(struct hinfc610_dbg_dump_t));
@@ -289,7 +282,7 @@ static int dbgfs_dump_init(struct dentry *root, struct hinfc_host *host)
 		S_IFREG | S_IRUSR | S_IWUSR, 
 		root, NULL, &dbgfs_dump_fops);
 	if (!dump->dentry) {
-		PR_ERR("Can't create 'dump' file.\n");
+		pr_err("Can't create 'dump' file.\n");
 		vfree(dump);
 		return -ENOENT;
 	}
@@ -337,15 +330,19 @@ static void dbg_dump_rw(struct hinfc_host *host, char op)
 
 	do_gettime(&logs->hour, &logs->min, &logs->sec, &logs->msec);
 
-	logs->error = ' ';
+	memcpy(logs->page_status, "\x20\x20\x20\x00", 4);
 
-	if (host->ecc_status) {
-		if (GET_BAD_BLOCK(host))
-			logs->error = 'B';
-		else if (GET_EMPTY_PAGE(host))
-			logs->error = 'E';
-		else if (GET_UC_ECC(host))
-			logs->error = 'U';
+	if (host->page_status) {
+		if (IS_PS_BAD_BLOCK(host))
+			logs->page_status[0] = 'B';
+		else if (IS_PS_EMPTY_PAGE(host))
+			logs->page_status[0] = 'E';
+
+		if (IS_PS_UN_ECC(host))
+			logs->page_status[1] = '*';
+
+		if (IS_PS_EPM_ERR(host) || IS_PS_BBM_ERR(host))
+			logs->page_status[2] = '?';
 	}
 
 	logs->op = op;
@@ -401,8 +398,10 @@ static void dbg_dump_erase(struct hinfc_host *host)
 	logs = &dbg_dump->logs[dbg_dump->index];
 
 	do_gettime(&logs->hour, &logs->min, &logs->sec, &logs->msec);
-	logs->error  = ' ';
-	logs->op     = 'E';
+
+	memcpy(logs->page_status, "\x20\x20\x20\x00", 4);
+
+	logs->op = 'E';
 	logs->cycle  = host->addr_cycle;
 	logs->length = dbg_dump->length;
 

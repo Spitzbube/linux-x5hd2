@@ -40,6 +40,8 @@ static struct input_dev *vinput_mouse_dev = NULL;
 static struct input_dev *vinput_tc_dev = NULL;
 static struct input_dev *vinput_multi_tc_dev = NULL;
 
+extern void input_block_status(int);
+
 struct finger_info {
 	int x;
 	int y;
@@ -70,7 +72,7 @@ static int __init vinput_multi_tc_init(void)
 
 	set_bit(BTN_TOUCH, vinput_multi_tc_dev->keybit);
 
-	input_mt_init_slots(vinput_multi_tc_dev, MAX_FINGER_NUM);
+	input_mt_init_slots(vinput_multi_tc_dev, MAX_FINGER_NUM, 0);
 
 	input_set_abs_params(vinput_multi_tc_dev, ABS_X, 0, 1280, 0, 0);
 	input_set_abs_params(vinput_multi_tc_dev, ABS_Y, 0, 720, 0, 0);
@@ -432,24 +434,31 @@ static int input_suspend(struct platform_device *pdev, pm_message_t state)
 
 static int input_resume(struct platform_device *pdev)
 {
+	input_block_status(INPUT_UNBLOCK);
 	input_report_key(vinput_kbd_dev, KEY_WAKEUP, 0x01);
 	input_report_key(vinput_kbd_dev, KEY_WAKEUP, 0x00);
 	input_sync(vinput_kbd_dev);
+	input_block_status(INPUT_BLOCK);
 	return 0;
 }
+
+static const struct dev_pm_ops vinput_pm_ops = {
+	.suspend = input_suspend,
+	.resume = input_resume,
+};
+
 #endif /* CONFIG_PM */
 
 static struct platform_driver input_driver = {
 	.probe = input_probe,
 	.remove = input_close,
-#ifdef CONFIG_PM
-	.suspend = input_suspend,
-	.resume = input_resume,
-#endif /* CONFIG_PM */
 	.driver = {
 		   .name = "Input_For_Android",
 		   .owner = THIS_MODULE,
-		   },
+#ifdef CONFIG_PM
+		   .pm = &vinput_pm_ops,
+#endif
+	},
 };
 
 static void input_dev_release(struct device *dev)

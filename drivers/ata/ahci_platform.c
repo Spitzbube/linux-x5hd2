@@ -12,9 +12,11 @@
  * any later version.
  */
 
+#include <linux/clk.h>
 #include <linux/kernel.h>
 #include <linux/gfp.h>
 #include <linux/module.h>
+#include <linux/pm.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/device.h>
@@ -23,18 +25,14 @@
 #include <linux/ahci_platform.h>
 #include "ahci.h"
 
-#include "ahci_sys.h"
-#include "hi_sata_dbg.h"
-
+static void ahci_host_stop(struct ata_host *host);
 static unsigned int ncq_en = 0;
 module_param(ncq_en, uint, 0600);
-MODULE_PARM_DESC(ncq_en, "ahci ncq flag (default:1)");
-
+MODULE_PARM_DESC(ncq_en, "ahci ncq flag (default:0)");
 enum ahci_type {
 	AHCI,		/* standard platform ahci */
 	IMX53_AHCI,	/* ahci on i.mx53 */
 	STRICT_AHCI,	/* delayed DMA engine start */
-	HISILICON_AHCI, /* Hisilicon ahci */
 };
 
 static struct platform_device_id ahci_devtype[] = {
@@ -48,14 +46,20 @@ static struct platform_device_id ahci_devtype[] = {
 		.name = "strict-ahci",
 		.driver_data = STRICT_AHCI,
 	}, {
-		.name = "hisilicon-ahci",
-		.driver_data = HISILICON_AHCI,
-	}, {
 		/* sentinel */
 	}
 };
 MODULE_DEVICE_TABLE(platform, ahci_devtype);
 
+static struct ata_port_operations ahci_platform_ops = {
+	.inherits	= &ahci_ops,
+	.host_stop	= ahci_host_stop,
+};
+
+static struct ata_port_operations ahci_platform_retry_srst_ops = {
+	.inherits	= &ahci_pmp_retry_srst_ops,
+	.host_stop	= ahci_host_stop,
+};
 
 static const struct ata_port_info ahci_port_info[] = {
 	/* by features */
@@ -63,26 +67,20 @@ static const struct ata_port_info ahci_port_info[] = {
 		.flags		= AHCI_FLAG_COMMON,
 		.pio_mask	= ATA_PIO4,
 		.udma_mask	= ATA_UDMA6,
-		.port_ops	= &ahci_ops,
+		.port_ops	= &ahci_platform_ops,
 	},
 	[IMX53_AHCI] = {
 		.flags		= AHCI_FLAG_COMMON,
 		.pio_mask	= ATA_PIO4,
 		.udma_mask	= ATA_UDMA6,
-		.port_ops	= &ahci_pmp_retry_srst_ops,
+		.port_ops	= &ahci_platform_retry_srst_ops,
 	},
 	[STRICT_AHCI] = {
 		AHCI_HFLAGS	(AHCI_HFLAG_DELAY_ENGINE),
 		.flags		= AHCI_FLAG_COMMON,
 		.pio_mask	= ATA_PIO4,
 		.udma_mask	= ATA_UDMA6,
-		.port_ops	= &ahci_ops,
-	},
-	[HISILICON_AHCI] = {
-		.flags		= AHCI_FLAG_COMMON,
-		.pio_mask	= ATA_PIO4,
-		.udma_mask	= ATA_UDMA6,
-		.port_ops	= &ahci_ops,
+		.port_ops	= &ahci_platform_ops,
 	},
 };
 
@@ -90,7 +88,7 @@ static struct scsi_host_template ahci_platform_sht = {
 	AHCI_SHT("ahci_platform"),
 };
 
-static int __init ahci_probe(struct platform_device *pdev)
+static int ahci_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct ahci_platform_data *pdata = dev_get_platdata(dev);
@@ -134,6 +132,17 @@ static int __init ahci_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
+	hpriv->clk = clk_get(dev, NULL);
+	if (IS_ERR(hpriv->clk)) {
+		dev_err(dev, "can't get clock\n");
+	} else {
+		rc = clk_prepare_enable(hpriv->clk);
+		if (rc) {
+			dev_err(dev, "clock prepare enable failed");
+			goto free_clk;
+		}
+	}
+
 	/*
 	 * Some platforms might need to prepare for mmio region access,
 	 * which could be done in the following init call. So, the mmio
@@ -143,21 +152,16 @@ static int __init ahci_probe(struct platform_device *pdev)
 	if (pdata && pdata->init) {
 		rc = pdata->init(dev, hpriv->mmio);
 		if (rc)
-			return rc;
+			goto disable_unprepare_clk;
 	}
-
-	hi_sata_init(hpriv->mmio);
 
 	ahci_save_initial_config(dev, hpriv,
 		pdata ? pdata->force_port_map : 0,
 		pdata ? pdata->mask_port_map  : 0);
 
 	/* prepare host */
-	if (hpriv->cap & HOST_CAP_NCQ) {
-		printk("NCQ is supported.\n");
+	if (hpriv->cap & HOST_CAP_NCQ)
 		pi.flags |= ATA_FLAG_NCQ;
-	}
-
 	if (!ncq_en)
 		pi.flags &= ~ATA_FLAG_NCQ;
 
@@ -176,7 +180,7 @@ static int __init ahci_probe(struct platform_device *pdev)
 	host = ata_host_alloc_pinfo(dev, ppi, n_ports);
 	if (!host) {
 		rc = -ENOMEM;
-		goto err0;
+		goto pdata_exit;
 	}
 
 	host->private_data = hpriv;
@@ -206,7 +210,7 @@ static int __init ahci_probe(struct platform_device *pdev)
 
 	rc = ahci_reset_controller(host);
 	if (rc)
-		goto err0;
+		goto pdata_exit;
 
 	ahci_init_controller(host);
 	ahci_print_info(host, "platform");
@@ -214,32 +218,37 @@ static int __init ahci_probe(struct platform_device *pdev)
 	rc = ata_host_activate(host, irq, ahci_interrupt, IRQF_SHARED,
 			       &ahci_platform_sht);
 	if (rc)
-		goto err0;
+		goto pdata_exit;
 
 	return 0;
-err0:
+pdata_exit:
 	if (pdata && pdata->exit)
 		pdata->exit(dev);
+disable_unprepare_clk:
+	if (!IS_ERR(hpriv->clk))
+		clk_disable_unprepare(hpriv->clk);
+free_clk:
+	if (!IS_ERR(hpriv->clk))
+		clk_put(hpriv->clk);
 	return rc;
 }
 
-static int __devexit ahci_remove(struct platform_device *pdev)
+static void ahci_host_stop(struct ata_host *host)
 {
-	struct device *dev = &pdev->dev;
+	struct device *dev = host->dev;
 	struct ahci_platform_data *pdata = dev_get_platdata(dev);
-	struct ata_host *host = dev_get_drvdata(dev);
-
-	ata_host_detach(host);
+	struct ahci_host_priv *hpriv = host->private_data;
 
 	if (pdata && pdata->exit)
 		pdata->exit(dev);
 
-	hi_sata_exit();
-
-	return 0;
+	if (!IS_ERR(hpriv->clk)) {
+		clk_disable_unprepare(hpriv->clk);
+		clk_put(hpriv->clk);
+	}
 }
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 static int ahci_suspend(struct device *dev)
 {
 	struct ahci_platform_data *pdata = dev_get_platdata(dev);
@@ -267,11 +276,13 @@ static int ahci_suspend(struct device *dev)
 	rc = ata_host_suspend(host, PMSG_SUSPEND);
 	if (rc)
 		return rc;
-		
-	hi_sata_exit();
-	
+
 	if (pdata && pdata->suspend)
 		return pdata->suspend(dev);
+
+	if (!IS_ERR(hpriv->clk))
+		clk_disable_unprepare(hpriv->clk);
+
 	return 0;
 }
 
@@ -279,19 +290,27 @@ static int ahci_resume(struct device *dev)
 {
 	struct ahci_platform_data *pdata = dev_get_platdata(dev);
 	struct ata_host *host = dev_get_drvdata(dev);
+	struct ahci_host_priv *hpriv = host->private_data;
 	int rc;
 
-	hi_sata_init(0);
+	if (!IS_ERR(hpriv->clk)) {
+		rc = clk_prepare_enable(hpriv->clk);
+		if (rc) {
+			dev_err(dev, "clock prepare enable failed");
+			return rc;
+		}
+	}
+
 	if (pdata && pdata->resume) {
 		rc = pdata->resume(dev);
 		if (rc)
-			return rc;
+			goto disable_unprepare_clk;
 	}
 
 	if (dev->power.power_state.event == PM_EVENT_SUSPEND) {
 		rc = ahci_reset_controller(host);
 		if (rc)
-			return rc;
+			goto disable_unprepare_clk;
 
 		ahci_init_controller(host);
 	}
@@ -299,87 +318,35 @@ static int ahci_resume(struct device *dev)
 	ata_host_resume(host);
 
 	return 0;
-}
 
-static struct dev_pm_ops ahci_pm_ops = {
-	.suspend		= &ahci_suspend,
-	.resume			= &ahci_resume,
-};
+disable_unprepare_clk:
+	if (!IS_ERR(hpriv->clk))
+		clk_disable_unprepare(hpriv->clk);
+
+	return rc;
+}
 #endif
 
+static SIMPLE_DEV_PM_OPS(ahci_pm_ops, ahci_suspend, ahci_resume);
+
 static const struct of_device_id ahci_of_match[] = {
-	{ .compatible = "calxeda,hb-ahci", },
 	{ .compatible = "snps,spear-ahci", },
 	{},
 };
 MODULE_DEVICE_TABLE(of, ahci_of_match);
 
 static struct platform_driver ahci_driver = {
-	.remove = __devexit_p(ahci_remove),
+	.probe = ahci_probe,
+	.remove = ata_platform_remove_one,
 	.driver = {
 		.name = "ahci",
 		.owner = THIS_MODULE,
 		.of_match_table = ahci_of_match,
-#ifdef CONFIG_PM
 		.pm = &ahci_pm_ops,
-#endif
 	},
 	.id_table	= ahci_devtype,
 };
-
-static struct resource hisatav100_ahci_resources[] = {
-	[0] = {
-		.start          = CONFIG_HI_SATA_IOBASE,
-		.end            = CONFIG_HI_SATA_IOBASE +
-					CONFIG_HI_SATA_IOSIZE - 1,
-		.flags          = IORESOURCE_MEM,
-	},
-	[1] = {
-		.start          = CONFIG_HI_SATA_IRQNUM,
-		.end            = CONFIG_HI_SATA_IRQNUM,
-		.flags		= IORESOURCE_IRQ,
-	},
-};
-
-static u64 ahci_dmamask = ~(u32)0;
-
-static void hisatav100_ahci_platdev_release(struct device *dev)
-{
-}
-
-static struct platform_device hisatav100_ahci_device = {
-	.name           = "ahci",
-	.dev = {
-		.dma_mask               = &ahci_dmamask,
-		.coherent_dma_mask      = 0xffffffff,
-		.release                = hisatav100_ahci_platdev_release,
-	},
-	.num_resources  = ARRAY_SIZE(hisatav100_ahci_resources),
-	.resource       = hisatav100_ahci_resources,
-	.id_entry = &ahci_devtype[HISILICON_AHCI],
-};
-
-static int __init ahci_init(void)
-{
-	int ret;
-
-	ret = platform_device_register(&hisatav100_ahci_device);
-	if (ret) {
-		printk(KERN_ERR "[%s %d] sata platform device register "
-				"is failed!!!\n", __func__, __LINE__);
-		return ret;
-	}
-
-	return platform_driver_probe(&ahci_driver, ahci_probe);
-}
-module_init(ahci_init);
-
-static void __exit ahci_exit(void)
-{
-	platform_driver_unregister(&ahci_driver);
-	platform_device_unregister(&hisatav100_ahci_device);
-}
-module_exit(ahci_exit);
+module_platform_driver(ahci_driver);
 
 MODULE_DESCRIPTION("AHCI SATA platform driver");
 MODULE_AUTHOR("Anton Vorontsov <avorontsov@ru.mvista.com>");

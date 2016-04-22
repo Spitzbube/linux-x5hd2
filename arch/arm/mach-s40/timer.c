@@ -16,9 +16,9 @@
 #include <linux/delay.h>
 #include <linux/percpu.h>
 
-#include <asm/hardware/gic.h>
 #include <asm/localtimer.h>
 
+#include <mach/hardware.h>
 #include <mach/platform.h>
 #include <mach/irqs.h>
 #include <asm/hardware/timer-sp.h>
@@ -119,12 +119,12 @@ static void sp804_set_mode(enum clock_event_mode mode,
 	unsigned long ctrl = TIMER_CTRL_32BIT | TIMER_CTRL_IE;
 	unsigned int clkevt_base = timer->addr;
 
-	writel(ctrl, clkevt_base + TIMER_CTRL);
+	writel(ctrl, IOMEM(clkevt_base + TIMER_CTRL));
 
 	switch (mode) {
 	case CLOCK_EVT_MODE_PERIODIC:
 		writel(DIV_ROUND_CLOSEST(local_timer_rate, HZ),
-			clkevt_base + TIMER_LOAD);
+		       IOMEM(clkevt_base + TIMER_LOAD));
 		ctrl |= TIMER_CTRL_PERIODIC | TIMER_CTRL_ENABLE;
 		break;
 
@@ -139,7 +139,7 @@ static void sp804_set_mode(enum clock_event_mode mode,
 		break;
 	}
 
-	writel(ctrl, clkevt_base + TIMER_CTRL);
+	writel(ctrl, IOMEM(clkevt_base + TIMER_CTRL));
 }
 
 static int sp804_set_next_event(unsigned long next,
@@ -147,10 +147,10 @@ static int sp804_set_next_event(unsigned long next,
 {
 	struct hi_timer_t *timer = GET_SMP_TIMER(smp_processor_id());
 	unsigned int clkevt_base = timer->addr;
-	unsigned long ctrl = readl(clkevt_base + TIMER_CTRL);
+	unsigned long ctrl = readl(IOMEM(clkevt_base + TIMER_CTRL));
 
-	writel(next, clkevt_base + TIMER_LOAD);
-	writel(ctrl | TIMER_CTRL_ENABLE, clkevt_base + TIMER_CTRL);
+	writel(next, IOMEM(clkevt_base + TIMER_LOAD));
+	writel(ctrl | TIMER_CTRL_ENABLE, IOMEM(clkevt_base + TIMER_CTRL));
 
 	return 0;
 }
@@ -163,7 +163,7 @@ static irqreturn_t sp804_timer_isr(int irq, void *dev_id)
 		= (struct clock_event_device *)timer->priv;
 
 	/* clear the interrupt */
-	writel(1, clkevt_base + TIMER_INTCLR);
+	writel(1, IOMEM(clkevt_base + TIMER_INTCLR));
 
 	evt->event_handler(evt);
 
@@ -251,11 +251,11 @@ static inline struct s40_clocksource *to_s40_clksrc(struct clocksource *cs)
 
 static void s40_clocksource_start(void __iomem *base)
 {
-	writel(0, base + TIMER_CTRL);
-	writel(0xffffffff, base + TIMER_LOAD);
-	writel(0xffffffff, base + TIMER_VALUE);
+	writel(0, IOMEM(base + TIMER_CTRL));
+	writel(0xffffffff, IOMEM(base + TIMER_LOAD));
+	writel(0xffffffff, IOMEM(base + TIMER_VALUE));
 	writel(TIMER_CTRL_32BIT | TIMER_CTRL_ENABLE | TIMER_CTRL_PERIODIC,
-		base + TIMER_CTRL);
+		IOMEM(base + TIMER_CTRL));
 }
 
 static cycle_t s40_clocksource_read(struct clocksource *cs)
@@ -294,10 +294,10 @@ static void __init s40_clocksource_init(void __iomem *base, const char *name)
 
 	clocksource_register_hz(clksrc, rate);
 
-	setup_sched_clock_needs_suspend(s40_sched_clock_read, 32, rate);
+	setup_sched_clock(s40_sched_clock_read, 32, rate);
 }
 
-static void __init s40_timer_init(void)
+void __init s40_timer_init(void)
 {
 #ifdef CONFIG_HAVE_ARM_LOCAL_TIMER
 	twd_local_timer_register(&twd_localtimer);
@@ -313,9 +313,3 @@ static void __init s40_timer_init(void)
 	sp804_clockevents_init((void *)TIMER(3)->addr,
 		TIMER(3)->irq.irq, TIMER(3)->name);
 }
-/*****************************************************************************/
-
-struct sys_timer s40_sys_timer = {
-	.init = s40_timer_init,
-};
-

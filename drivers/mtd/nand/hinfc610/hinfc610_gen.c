@@ -6,70 +6,75 @@
  *
 ******************************************************************************/
 
-#include "../match_table.h"
+#include <linux/match.h>
 #include "hinfc610_gen.h"
 
 /*****************************************************************************/
 
-static struct match_reg_type page_type2reg[] = {
-	{
-		hinfc610_pagesize_2K, NAND_PAGE_2K,
-	}, {
-		hinfc610_pagesize_4K, NAND_PAGE_4K,
-	}, {
-		hinfc610_pagesize_8K, NAND_PAGE_8K,
-	}, {
-		hinfc610_pagesize_16K, NAND_PAGE_16K,
-	}, {
-		hinfc610_pagesize_32K, NAND_PAGE_32K,
-	}
+static struct match_t hinfc610_pagesize[] = {
+	MATCH_SET_TYPE_REG(SZ_2K,  hinfc610_pagesize_2K),
+	MATCH_SET_TYPE_REG(SZ_4K,  hinfc610_pagesize_4K),
+	MATCH_SET_TYPE_REG(SZ_8K,  hinfc610_pagesize_8K),
+	MATCH_SET_TYPE_REG(SZ_16K, hinfc610_pagesize_16K),
+	MATCH_SET_TYPE_REG(SZ_32K, hinfc610_pagesize_32K),
 };
 
-enum hinfc610_page_reg hinfc610_page_type2reg(int type)
+int hinfc610_get_pagesize(struct hinfc_host *host)
 {
-	return type2reg(page_type2reg, ARRAY_SIZE(page_type2reg), type, 0);
+	int regval = host->NFC_CON >> HINFC610_CON_PAGEISZE_SHIFT;
+	regval &= HINFC610_CON_PAGESIZE_MASK;
+
+	return match_reg_to_type(hinfc610_pagesize,
+		ARRAY_SIZE(hinfc610_pagesize), regval, SZ_2K);
 }
 
-int hinfc610_page_reg2type(enum hinfc610_page_reg reg)
+void hinfc610_set_pagesize(struct hinfc_host *host, int pagesize)
 {
-	return reg2type(page_type2reg, ARRAY_SIZE(page_type2reg), reg, 0);
+	int mask = ~(HINFC610_CON_PAGESIZE_MASK << HINFC610_CON_PAGEISZE_SHIFT);
+	int regval = match_type_to_reg(hinfc610_pagesize,
+		ARRAY_SIZE(hinfc610_pagesize), pagesize, hinfc610_pagesize_2K);
+
+	regval = (regval & HINFC610_CON_PAGESIZE_MASK) << HINFC610_CON_PAGEISZE_SHIFT;
+
+	host->NFC_CON &=  mask;
+	host->NFC_CON |=  regval;
+
+	host->NFC_CON_ECC_NONE &=  mask;
+	host->NFC_CON_ECC_NONE |=  regval;
 }
 /*****************************************************************************/
 
-static struct match_reg_type ecc_type2reg[] = {
-	{
-		hinfc610_ecc_none, NAND_ECC_NONE,
-	}, {
-		hinfc610_ecc_8bit, NAND_ECC_8BIT,
-	}, {
-		hinfc610_ecc_13bit, NAND_ECC_13BIT,
-	}, {
-		hinfc610_ecc_18bit, NAND_ECC_18BIT,
-	}, {
-		hinfc610_ecc_24bit, NAND_ECC_24BIT,
-	}, {
-		hinfc610_ecc_27bit, NAND_ECC_27BIT,
-	}, {
-		hinfc610_ecc_32bit, NAND_ECC_32BIT,
-	}, {
-		hinfc610_ecc_41bit, NAND_ECC_41BIT,
-	}, {
-		hinfc610_ecc_48bit, NAND_ECC_48BIT,
-	}, {
-		hinfc610_ecc_60bit, NAND_ECC_60BIT,
-	}, {
-		hinfc610_ecc_72bit, NAND_ECC_72BIT,
-	}, {
-		hinfc610_ecc_80bit, NAND_ECC_80BIT,
-	}
+static struct match_t hinfc610_ecc[] = {
+	MATCH_SET_TYPE_REG(NAND_ECC_NONE,  hinfc610_ecc_none),
+	MATCH_SET_TYPE_REG(NAND_ECC_8BIT,  hinfc610_ecc_8bit),
+	MATCH_SET_TYPE_REG(NAND_ECC_13BIT, hinfc610_ecc_13bit),
+	MATCH_SET_TYPE_REG(NAND_ECC_18BIT, hinfc610_ecc_18bit),
+	MATCH_SET_TYPE_REG(NAND_ECC_24BIT, hinfc610_ecc_24bit),
+	MATCH_SET_TYPE_REG(NAND_ECC_27BIT, hinfc610_ecc_27bit),
+	MATCH_SET_TYPE_REG(NAND_ECC_32BIT, hinfc610_ecc_32bit),
+	MATCH_SET_TYPE_REG(NAND_ECC_41BIT, hinfc610_ecc_41bit),
+	MATCH_SET_TYPE_REG(NAND_ECC_48BIT, hinfc610_ecc_48bit),
+	MATCH_SET_TYPE_REG(NAND_ECC_60BIT, hinfc610_ecc_60bit),
+	MATCH_SET_TYPE_REG(NAND_ECC_72BIT, hinfc610_ecc_72bit),
+	MATCH_SET_TYPE_REG(NAND_ECC_80BIT, hinfc610_ecc_80bit),
 };
 
-enum hinfc610_ecc_reg hinfc610_ecc_type2reg(int type)
+int hinfc610_get_ecctype(struct hinfc_host *host)
 {
-	return type2reg(ecc_type2reg, ARRAY_SIZE(ecc_type2reg), type, 0);
+	int regval = host->NFC_CON >> HINFC610_CON_ECCTYPE_SHIFT;
+
+	regval &= HINFC610_CON_ECCTYPE_MASK;
+
+	return match_reg_to_type(hinfc610_ecc, ARRAY_SIZE(hinfc610_ecc),
+		regval, NAND_ECC_8BIT);
 }
 
-int hinfc610_ecc_reg2type(enum hinfc610_ecc_reg reg)
+void hinfc610_set_ecctype(struct hinfc_host *host, int ecctype)
 {
-	return reg2type(ecc_type2reg, ARRAY_SIZE(ecc_type2reg), reg, 0);
+	int regval = match_type_to_reg(hinfc610_ecc, ARRAY_SIZE(hinfc610_ecc),
+		ecctype, hinfc610_ecc_8bit);
+
+	host->NFC_CON &= ~(HINFC610_CON_ECCTYPE_MASK << HINFC610_CON_ECCTYPE_SHIFT);
+
+	host->NFC_CON |= (regval & HINFC610_CON_ECCTYPE_MASK) << HINFC610_CON_ECCTYPE_SHIFT;
 }

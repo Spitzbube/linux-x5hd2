@@ -34,39 +34,5 @@
 #  include "../../mtdcore.h"
 #endif
 
-/*****************************************************************************/
-
-#define DUMP_DATA(_p, _n) do { \
-	int ix; \
-	unsigned char *rr = (unsigned char *)(_p); \
-	for (ix = 0; ix < _n; ix++) { \
-		printk("%02X ", rr[ix]); \
-		if (!((ix + 1) % 16)) printk("\n"); \
-	} \
-} while (0)
-
-#define DBG_OUT(fmt, args...) do{\
-	printk("%s(%d): " fmt, __FILE__, __LINE__, ##args); \
-} while (0)
-
-#if 1
-#  define DBG_MSG(_fmt, arg...)
-#else
-#  define DBG_MSG(_fmt, arg...) \
-	printk(KERN_INFO "%s(%d): " _fmt, __FILE__, __LINE__, ##arg);
-#endif
-
-#define PR_BUG(fmt, args...) do{\
-	printk("%s(%d): bug " fmt, __FILE__, __LINE__, ##args); \
-	while(1); \
-} while (0)
-
-#define PR_ERR(fmt, args...) do{\
-	printk(KERN_ERR "%s(%d): " fmt, __FILE__, __LINE__, ##args); \
-} while (0)
-
-#define PR_MSG(_fmt, arg...) \
-	printk(_fmt, ##arg)
-
 /******************************************************************************/
 #endif /* HINFC610_OSH */

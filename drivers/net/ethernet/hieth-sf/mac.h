@@ -32,6 +32,9 @@
 #define HIETH_LINKED	(1<<1)
 #define HIETH_DUP_FULL	1
 
+#define HIETH_MAX_RCV_LEN	1535
+#define BITS_LEN_MAX	MK_BITS(0, 10)
+
 int hieth_set_mac_leadcode_cnt_limit(struct hieth_netdev_local *ld, int cnt);
 int hieth_set_mac_trans_interval_bits(struct hieth_netdev_local *ld, int nbits);
 int hieth_set_mac_fc_interval(struct hieth_netdev_local *ld, int para);
@@ -49,6 +52,7 @@ int hieth_get_negmode(struct hieth_netdev_local *ld);
 #define HIETH_RMII_MODE		1
 
 int hieth_set_mii_mode(struct hieth_netdev_local *ld, int mode);
+void hieth_set_rcv_len_max(struct hieth_netdev_local *ld, int cnt);
 
 #endif
 

@@ -70,6 +70,8 @@ extern int pcd_remove(  struct platform_device *_dev );
 extern void hcd_remove(  struct platform_device *_dev );
 extern void dwc_otg_adp_start(dwc_otg_core_if_t * core_if, uint8_t is_host);
 
+extern void hiusb_start_hcd(void);
+extern void hiusb_stop_hcd(void);
 /*-------------------------------------------------------------------------*/
 /* Encapsulate the module parameter settings */
 
@@ -204,41 +206,10 @@ static struct dwc_otg_driver_module_params dwc_otg_module_params = {
 };
 
 /**
- * This function shows the Driver Version.
- */
-static ssize_t version_show(struct device_driver *dev, char *buf)
-{
-	return snprintf(buf, sizeof(DWC_DRIVER_VERSION) + 2, "%s\n",
-			DWC_DRIVER_VERSION);
-}
-
-static DRIVER_ATTR(version, S_IRUGO, version_show, NULL);
-
-/**
  * Global Debug Level Mask.
  */
 uint32_t g_dbg_lvl = 0;		/* OFF */
 
-/**
- * This function shows the driver Debug Level.
- */
-static ssize_t dbg_level_show(struct device_driver *drv, char *buf)
-{
-	return sprintf(buf, "0x%0x\n", g_dbg_lvl);
-}
-
-/**
- * This function stores the driver Debug Level.
- */
-static ssize_t dbg_level_store(struct device_driver *drv, const char *buf,
-			       size_t count)
-{
-	g_dbg_lvl = simple_strtoul(buf, NULL, 16);
-	return count;
-}
-
-static DRIVER_ATTR(debuglevel, S_IRUGO | S_IWUSR, dbg_level_show,
-		   dbg_level_store);
 
 /**
  * This function is called during module intialization
@@ -533,7 +504,7 @@ static irqreturn_t dwc_otg_common_irq(int irq, void *dev)
  *
  * @param _dev
  */
-static void dwc_otg_driver_remove( struct platform_device *_dev)
+static int  dwc_otg_driver_remove( struct platform_device *_dev)
 {
 
 	dwc_otg_device_t *otg_dev = platform_get_drvdata(_dev);
@@ -543,14 +514,14 @@ static void dwc_otg_driver_remove( struct platform_device *_dev)
 	if (!otg_dev) {
 		/* Memory allocation for the dwc_otg_device failed. */
 		DWC_DEBUGPL(DBG_ANY, "%s: otg_dev NULL!\n", __func__);
-		return;
+		return -1;
 	}
 #ifndef DWC_DEVICE_ONLY
 	if (otg_dev->hcd) {
 		hcd_remove(_dev);
 	} else {
 		DWC_DEBUGPL(DBG_ANY, "%s: otg_dev->hcd NULL!\n", __func__);
-		return;
+		return -1;
 	}
 #endif
 
@@ -559,7 +530,7 @@ static void dwc_otg_driver_remove( struct platform_device *_dev)
 		pcd_remove(_dev);
 	} else {
 		DWC_DEBUGPL(DBG_ANY, "%s: otg_dev->pcd NULL!\n", __func__);
-		return;
+		return -1;
 	}
 #endif
 	/*
@@ -569,14 +540,14 @@ static void dwc_otg_driver_remove( struct platform_device *_dev)
 		free_irq(_dev->resource[1].start, otg_dev);
 	} else {
 		DWC_DEBUGPL(DBG_ANY, "%s: There is no installed irq!\n", __func__);
-		return;
+		return -1;
 	}
 
 	if (otg_dev->core_if) {
 		dwc_otg_cil_remove(otg_dev->core_if);
 	} else {
 		DWC_DEBUGPL(DBG_ANY, "%s: otg_dev->core_if NULL!\n", __func__);
-		return;
+		return -1;
 	}
 
 	/*
@@ -591,6 +562,8 @@ static void dwc_otg_driver_remove( struct platform_device *_dev)
 		iounmap(otg_dev->os_dep.base);
 	}
 	DWC_FREE(otg_dev);
+
+	hiusb_stop_hcd();
 
 	/*
 	 * Clear the drvdata pointer.
@@ -640,6 +613,7 @@ static int dwc_otg_driver_probe(struct platform_device *pltdev)
 	}
 	dev_dbg(&pltdev->dev, "base=0x%08x\n",(unsigned)dwc_otg_device->os_dep.base);
 
+	hiusb_start_hcd();
 	/*
 	 * Initialize driver data to point to the global DWC_otg
 	 * Device structure.
@@ -682,7 +656,7 @@ static int dwc_otg_driver_probe(struct platform_device *pltdev)
 	/*
 	 * Create Device Attributes in sysfs
 	 */
-	dwc_otg_attr_create(pltdev);
+	//dwc_otg_attr_create(pltdev);
 
 	/*
 	 * Disable the global interrupt until all the interrupt
@@ -701,7 +675,7 @@ static int dwc_otg_driver_probe(struct platform_device *pltdev)
 			     IRQF_SHARED | IRQF_DISABLED | IRQ_LEVEL, "dwc_otg",
 			     dwc_otg_device);
 	if (retval) {
-		DWC_DEBUGPL(DBG_CIL,"request of irq%d failed\n",pltdev->resource[1].start);
+		DWC_ERROR("request of irq%d failed\n",pltdev->resource[1].start);
 		retval = -EBUSY;
 		goto fail;
 	} else {
@@ -723,7 +697,7 @@ static int dwc_otg_driver_probe(struct platform_device *pltdev)
 	 */
 	retval = pcd_init(pltdev);
 	if (retval != 0) {
-		DWC_DEBUGPL(DBG_CIL,"pcd_init failed\n");
+		DWC_ERROR("pcd_init failed\n");
 		dwc_otg_device->pcd = NULL;
 		goto fail;
 	}	
@@ -734,7 +708,7 @@ static int dwc_otg_driver_probe(struct platform_device *pltdev)
 	 */
 	retval = hcd_init(pltdev);
 	if (retval != 0) {
-		DWC_DEBUGPL("hcd_init failed\n");
+		DWC_ERROR("hcd_init failed\n");
 		dwc_otg_device->hcd = NULL;
 		goto fail;
 	}
@@ -793,13 +767,24 @@ static struct resource hiusbudc_resources[] =
 };
 /*****************************************************************************/
 
+static void usb_hiusbudc_platdev_release(struct device *dev)
+{
+	/*
+	 * These don't need to do anything because the
+	 * pdev structures are statically allocated.
+	 */
+}
+
 static struct platform_device hiusbudc_pltdev =
 {
 	.name           = dwc_driver_name,
 	.id             = -1,
-	.dev.platform_data     = NULL,
-	.dev.dma_mask          = (u64*)~0,
-	.dev.coherent_dma_mask = (u64) ~0,
+	.dev = {
+		.platform_data     = NULL,
+		.dma_mask          = (u64*)~0,
+		.coherent_dma_mask =(u64) ~0,
+		.release           = usb_hiusbudc_platdev_release,
+	},
 	.num_resources  = ARRAY_SIZE(hiusbudc_resources),
 	.resource       =hiusbudc_resources,
 };
@@ -1411,7 +1396,7 @@ MODULE_PARM_DESC(otg_ver, "OTG revision supported 0=OTG 1.3 1=OTG 2.0");
  <td>dev_out_nak</td>
  <td>Specifies whether  Device OUT NAK enhancement enabled or no.
  The driver will automatically detect the value for this parameter if
- none is specified. This parameter is valid only when OTG_EN_DESC_DMA == 1’b1.
+ none is specified. This parameter is valid only when OTG_EN_DESC_DMA == 1Â’b1.
  - 0: The core does not set NAK after Bulk OUT transfer complete (default)
  - 1: The core sets NAK after Bulk OUT transfer complete
  </td></tr>
@@ -1423,7 +1408,7 @@ MODULE_PARM_DESC(otg_ver, "OTG revision supported 0=OTG 1.3 1=OTG 2.0");
  endpoint is re-enabled by the application the  
  - 0: Core starts processing from the DOEPDMA descriptor (default)
  - 1: Core starts processing from the descriptor which received the BNA.
- This parameter is valid only when OTG_EN_DESC_DMA == 1’b1.
+ This parameter is valid only when OTG_EN_DESC_DMA == 1Â’b1.
  </td></tr>
 
  <tr>

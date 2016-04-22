@@ -288,7 +288,7 @@ void DWC_EXCEPTION(char *format, ...)
 	BUG_ON(1);
 }
 
-#if 1 //def DEBUG
+#ifdef DEBUG
 void __DWC_DEBUG(char *format, ...)
 {
 	va_list args;

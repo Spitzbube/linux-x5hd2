@@ -17,13 +17,22 @@
 static int hinfc504_micron_set_rr_reg(struct hinfc_host *host, int rr)
 {
 #define MICRON_SET_RR          0xEF
+	int reg_pwidth;
+	reg_pwidth = hinfc_read(host, HINFC504_PWIDTH);
+	hinfc_write(host, 0xFFF, HINFC504_PWIDTH);
+	host->enable_ecc_randomizer(host, DISABLE, DISABLE);
+
 	hinfc_write(host, 1, HINFC504_DATA_NUM);
 
 	writel(rr, host->chip->IO_ADDR_W);
 	hinfc_write(host, MICRON_RR_ADDR, HINFC504_ADDRL);
 	hinfc_write(host, MICRON_SET_RR, HINFC504_CMD);
-	hinfc_write(host, HINFC504_WRITE_1CMD_1ADD_DATA, HINFC504_OP);
+	hinfc_write(host, HINFC504_WRITE_1CMD_1ADD_DATA_WAIT_READY, HINFC504_OP);
 	WAIT_CONTROLLER_FINISH();
+
+	host->enable_ecc_randomizer(host, ENABLE, ENABLE);
+	hinfc_write(host, reg_pwidth, HINFC504_PWIDTH);
+
 #undef MICRON_SET_RR
 	return 0;
 }

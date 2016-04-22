@@ -74,6 +74,12 @@ static struct gadget_wrapper {
 /* Display the contents of the buffer */
 extern void dump_msg(const u8 * buf, unsigned int length);
 
+int udc_attach_driver(const char *name, struct usb_gadget_driver *driver)
+{
+	//do nothing ,only make 
+	return 0;
+}
+EXPORT_SYMBOL_GPL(udc_attach_driver);
 
 int usb_gadget_map_request(struct usb_gadget *gadget,
 		struct usb_request *req, int is_in)
@@ -1025,6 +1031,9 @@ void gadget_add_eps(struct gadget_wrapper *d)
 	INIT_LIST_HEAD(&d->gadget.ep_list);
 	d->gadget.ep0 = &d->ep0;
 	d->gadget.speed = USB_SPEED_UNKNOWN;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0)
+	d->gadget.max_speed = USB_SPEED_HIGH;
+#endif
 
 	INIT_LIST_HEAD(&d->gadget.ep0->ep_list);
 
@@ -1132,7 +1141,7 @@ static struct gadget_wrapper *alloc_wrapper(
 	d->gadget.dev.parent = &_dev->dev;
 	d->gadget.dev.release = dwc_otg_pcd_gadget_release;
 	d->gadget.ops = &dwc_otg_pcd_ops;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,0,8)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,3,0)
 	d->gadget.is_dualspeed = dwc_otg_pcd_is_dualspeed(otg_dev->pcd);
 #endif
 	d->gadget.is_otg = dwc_otg_pcd_is_otg(otg_dev->pcd);
@@ -1141,7 +1150,7 @@ static struct gadget_wrapper *alloc_wrapper(
 	/* Register the gadget device */
 	retval = device_register(&d->gadget.dev);
 	if (retval != 0) {
-		DWC_PRINTF("device_register failed\n");
+		DWC_ERROR("device_register failed\n");
 		DWC_FREE(d);
 		return NULL;
 	}
@@ -1153,7 +1162,7 @@ static void free_wrapper(struct gadget_wrapper *d)
 {
 	if (d->driver) {
 		/* should have been done already by driver model core */
-		DWC_DEBUGPL(DBG_PCDV,"driver '%s' is still registered\n",
+		DWC_WARN("driver '%s' is still registered\n",
 			 d->driver->driver.name);
 		usb_gadget_unregister_driver(d->driver);
 	}
@@ -1177,7 +1186,7 @@ int pcd_init(struct platform_device *_dev )
 	otg_dev->pcd = dwc_otg_pcd_init(otg_dev->core_if);
 
 	if (!otg_dev->pcd) {
-		DWC_DEBUGPL(DBG_PCDV,"dwc_otg_pcd_init failed\n");
+		DWC_ERROR("dwc_otg_pcd_init failed\n");
 		return -ENOMEM;
 	}
 
@@ -1196,7 +1205,7 @@ int pcd_init(struct platform_device *_dev )
 			     IRQF_SHARED | IRQF_DISABLED,
 			     gadget_wrapper->gadget.name, otg_dev->pcd);
 	if (retval != 0) {
-		DWC_DEBUGPL(DBG_PCDV,"request of irq%d failed\n", _dev->resource[1].start);
+		DWC_ERROR("request of irq%d failed\n", _dev->resource[1].start);
 		free_wrapper(gadget_wrapper);
 		return -EBUSY;
 	}
@@ -1223,8 +1232,8 @@ void pcd_remove(	struct platform_device *_dev   )
 	 * Free the IRQ
 	 */
 	free_irq(_dev->resource[1].start, pcd);
-	dwc_otg_pcd_remove(otg_dev->pcd);
 	free_wrapper(gadget_wrapper);
+	dwc_otg_pcd_remove(otg_dev->pcd);	
 	otg_dev->pcd = 0;
 }
 
@@ -1241,6 +1250,8 @@ void pcd_remove(	struct platform_device *_dev   )
  */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,37)
 int usb_gadget_register_driver(struct usb_gadget_driver *driver)
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
+	int usb_gadget_probe_driver(struct usb_gadget_driver *driver)
 #else
 int usb_gadget_probe_driver(struct usb_gadget_driver *driver,
 		int (*bind)(struct usb_gadget *))
@@ -1251,8 +1262,13 @@ int usb_gadget_probe_driver(struct usb_gadget_driver *driver,
 	DWC_DEBUGPL(DBG_PCD, "registering gadget driver '%s'\n",
 		    driver->driver.name);
 
-	if (!driver || driver->max_speed == USB_SPEED_UNKNOWN ||
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,37)
+	if (!driver || 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,3,0)
+		driver->speed == USB_SPEED_UNKNOWN ||
+#else
+		driver->max_speed == USB_SPEED_UNKNOWN ||
+#endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,37) || LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
 	    !driver->bind ||
 #else
 		!bind ||
@@ -1277,11 +1293,13 @@ int usb_gadget_probe_driver(struct usb_gadget_driver *driver,
 	DWC_DEBUGPL(DBG_PCD, "bind to driver %s\n", driver->driver.name);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,37)
 	retval = driver->bind(&gadget_wrapper->gadget);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
+	retval = driver->bind(&gadget_wrapper->gadget,gadget_wrapper->driver);		
 #else
 	retval = bind(&gadget_wrapper->gadget);
 #endif
 	if (retval) {
-		DWC_DEBUGPL(DBG_PCDV,"bind to driver %s --> error %d\n",
+		DWC_ERROR("bind to driver %s --> error %d\n",
 			  driver->driver.name, retval);
 		gadget_wrapper->driver = 0;
 		gadget_wrapper->gadget.dev.driver = 0;
@@ -1317,6 +1335,7 @@ int usb_gadget_unregister_driver(struct usb_gadget_driver *driver)
 		return -EINVAL;
 	}
 
+	driver->disconnect(&gadget_wrapper->gadget);
 	driver->unbind(&gadget_wrapper->gadget);
 	gadget_wrapper->driver = 0;
 

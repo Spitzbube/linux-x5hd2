@@ -257,7 +257,7 @@ int hieth_feed_hw(struct hieth_netdev_local *ld)
 	while (hieth_readl_bits
 	       (ld, UD_REG_NAME(GLB_RO_QUEUE_STAT), BITS_RECVQ_RDY)) {
 
-		skb = dev_alloc_skb(SKB_SIZE);
+		skb = hieth_platdev_alloc_skb(ld);
 
 		if (!skb)
 			break;

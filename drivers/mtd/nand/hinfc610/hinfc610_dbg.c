@@ -6,11 +6,6 @@
  *
 ******************************************************************************/
 
-#include <linux/moduleparam.h>
-#include <linux/vmalloc.h>
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/slab.h>
 #include <linux/debugfs.h>
 #include <asm/uaccess.h>
 #include <linux/ctype.h>
@@ -46,16 +41,8 @@ struct hinfc610_dbg_inf_t *hinfc610_dbg_inf[] = {
 
 static struct dentry *dbgfs_root = NULL;
 static struct hinfc_host *dbgfs_host = NULL;
-static char *dbgfs_options = NULL;
+
 /*****************************************************************************/
-
-static int __init dbgfs_options_setup(char *s)
-{
-	dbgfs_options = s;
-	return 1;
-}
-__setup("nanddbgfs=", dbgfs_options_setup);
-
 static ssize_t dbgfs_debug_read(struct file *filp, char __user *buffer,
 				size_t count, loff_t *ppos)
 {
@@ -75,7 +62,7 @@ static ssize_t dbgfs_debug_read(struct file *filp, char __user *buffer,
 
 	for (inf = hinfc610_dbg_inf; *inf; inf++) {
 		if ((p - msg) + MAX_OPTION_SIZE + 2 > count) {
-			PR_ERR("Not enough memory.\n");
+			pr_err("Not enough memory.\n");
 			break;
 		}
 		p += snprintf(p, (MAX_OPTION_SIZE + 2), "%c%s,",
@@ -207,21 +194,21 @@ int hinfc610_dbgfs_debug_init(struct hinfc_host *host)
 
 	dbgfs_root = debugfs_create_dir("nand", NULL);
 	if (!dbgfs_root) {
-		PR_ERR("Can't create 'nand' dir.\n");
+		pr_err("Can't create 'nand' dir.\n");
 		return -ENOENT;
 	}
 
 	dentry = debugfs_create_file("debug", S_IFREG | S_IRUSR | S_IWUSR,
 				     dbgfs_root, NULL, &dbgfs_debug_fops);
 	if (!dentry) {
-		PR_ERR("Can't create 'debug' file.\n");
+		pr_err("Can't create 'debug' file.\n");
 		goto fail;
 	}
 
 	dbgfs_host = host;
 
-	if (dbgfs_options)
-		dbgfs_debug_ops(dbgfs_options, hinfc610_dbg_inf);
+	if (nand_dbgfs_options)
+		dbgfs_debug_ops(nand_dbgfs_options, hinfc610_dbg_inf);
 
 	return 0;
 
@@ -237,21 +224,21 @@ static int dbgfs_read_retry_notice_init(struct dentry *root,
 					struct hinfc_host *host)
 {
 	if (!host->read_retry) {
-		printk(KERN_WARNING
-		       "read_retry_notice: The NAND not support this interface.\n");
+		pr_warn("read_retry_notice: The NAND not support this interface.\n");
 		return -1;
 	}
 
 	return 0;
 }
+/*****************************************************************************/
 
-static void hinfc610_dbg_read_retry_notice(struct hinfc_host *host,
-					      int index)
+static void hinfc610_dbg_read_retry_notice(struct hinfc_host *host, int index)
 {
-	printk(KERN_WARNING "Page 0x%08x do read retry (%d/%d) %s.\n",
-	       GET_PAGE_INDEX(host), index, host->read_retry->count,
-	       (GET_UC_ECC(host) ? "Fail" : "Success"));
+	pr_warn("Page 0x%08x do read retry (%d/%d) %s.\n",
+		GET_PAGE_INDEX(host), index, host->read_retry->count,
+		(IS_PS_UN_ECC(host) ? "Fail" : "Success"));
 }
+/*****************************************************************************/
 
 struct hinfc610_dbg_inf_t hinfc610_dbg_inf_read_retry_notice = {
 	"read_retry_notice", 0,
@@ -266,13 +253,29 @@ struct hinfc610_dbg_inf_t hinfc610_dbg_inf_read_retry_notice = {
 
 static void hinfc610_dbg_ecc_notice_read(struct hinfc_host *host)
 {
-	if (GET_BAD_BLOCK(host) || GET_EMPTY_PAGE(host))
-		return;
+	unsigned int pageindex =  GET_PAGE_INDEX(host);
 
-	if (GET_UC_ECC(host))
-		printk(KERN_WARNING "page 0x%08x has uncorrect ecc.\n",
-		       GET_PAGE_INDEX(host));
+	if (IS_PS_BAD_BLOCK(host) || IS_PS_EMPTY_PAGE(host)) {
+		if (IS_PS_BBM_ERR(host))
+			pr_warn("page 0x%08x bbm is corruption, bbm: 0x%x.\n",
+				pageindex, *host->bbm);
+
+		if (IS_PS_EPM_ERR(host))
+			pr_warn("page 0x%08x epm is corruption, epm: 0x%x.\n",
+				pageindex, *host->epm);
+
+		return;
+	}
+
+	if (IS_PS_UN_ECC(host))
+		pr_warn("page 0x%08x has uncorrect ecc.\n", pageindex);
+	else if (host->ecc.max_bitsflap >= host->ecc.threshold)
+		pr_warn("page 0x%08x has bitsflap (%d >= %d).\n",
+			pageindex,
+			host->ecc.max_bitsflap,
+			host->ecc.threshold);
 }
+/*****************************************************************************/
 
 struct hinfc610_dbg_inf_t hinfc610_dbg_inf_ecc_notice = {
 	"ecc_notice", 0,

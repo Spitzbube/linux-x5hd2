@@ -6,32 +6,11 @@
  *
 ******************************************************************************/
 
-
 #include <linux/init.h>
 #include <linux/module.h>
-#include <linux/string_helpers.h>
+#include <linux/sizes.h>
+
 #include "spi_ids.h"
-
-/*****************************************************************************/
-
-#if 1
-#  define DBG_MSG(_fmt, arg...)
-#else
-#  define DBG_MSG(_fmt, arg...)   \
-	printk(KERN_DEBUG "%s(%d): " _fmt, \
-		__FILE__, __LINE__, ##arg);
-#endif
-
-#define DBG_BUG(fmt, args...) do { \
-	printk(KERN_ERR "%s(%d): BUG !!! " fmt, \
-		__FILE__, __LINE__, ##args); \
-	while (1) { \
-		; \
-	} \
-} while (0)
-
-#define PR_MSG(_fmt, args...) \
-	printk(KERN_INFO _fmt, ##args)
 
 #define SPI_DRV_VERSION       "1.30"
 
@@ -55,21 +34,14 @@ struct spi_info *spi_serach_ids(struct spi_info * spi_info_table,
 }
 /*****************************************************************************/
 
-void spi_search_rw(struct spi_info *spiinfo,
-		   struct spi_operation *spiop_rw,
-		   unsigned int iftype,
-		   unsigned int max_dummy,
-		   int is_read)
+void spi_search_rw(struct spi_info *spiinfo, struct spi_operation *spiop_rw,
+		   unsigned int iftype, unsigned int max_dummy, int is_read)
 {
 	int ix = 0;
 	struct spi_operation **spiop, **fitspiop;
 
 	for (fitspiop = spiop = (is_read ? spiinfo->read : spiinfo->write);
-		(*spiop) && ix < MAX_SPI_OP; spiop++, ix++) {
-		DBG_MSG("dump[%d] %s iftype:0x%02X\n", ix,
-			(is_read ? "read" : "write"),
-			(*spiop)->iftype);
-
+	     (*spiop) && ix < MAX_SPI_OP; spiop++, ix++) {
 		if (((*spiop)->iftype & iftype)
 			&& ((*spiop)->dummy <= max_dummy)
 			&& (*fitspiop)->iftype < (*spiop)->iftype)
@@ -79,8 +51,7 @@ void spi_search_rw(struct spi_info *spiinfo,
 }
 /*****************************************************************************/
 
-void spi_get_erase(struct spi_info *spiinfo,
-		   struct spi_operation *spiop_erase)
+void spi_get_erase(struct spi_info *spiinfo, struct spi_operation *spiop_erase)
 {
 	int ix;
 
@@ -94,8 +65,11 @@ void spi_get_erase(struct spi_info *spiinfo,
 			break;
 		}
 	}
-	if (!spiop_erase->size)
-		DBG_BUG("Spi erasesize error!");
+	if (!spiop_erase->size) {
+		pr_err("SPIFlash erasesize %d error!\n",
+		       spiop_erase->size);
+		BUG();
+	}
 }
 
 /*****************************************************************************/
@@ -107,6 +81,7 @@ void spi_get_erase_sfcv300(struct spi_info *spiinfo,
 	int ix;
 
 	(*erasesize) = spiinfo->erasesize;
+
 	for (ix = 0; ix < MAX_SPI_OP; ix++) {
 		if (spiinfo->erase[ix] == NULL)
 			break;
@@ -123,39 +98,7 @@ void spi_get_erase_sfcv300(struct spi_info *spiinfo,
 			break;
 		}
 
-
-		if ((int)(spiop_erase[ix].size) < _2K) {
-			char buf[20];
-			DBG_BUG("erase block size mistaken: "
-				"spi->erase[%d].size:%s\n",
-				ix, ultohstr(spiop_erase[ix].size,
-				buf, sizeof(buf)));
-		}
-
-		if (spiop_erase[ix].size < (*erasesize)) {
+		if (spiop_erase[ix].size < (*erasesize))
 			(*erasesize) = spiop_erase[ix].size;
-		}
 	}
 }
-
-/*****************************************************************************/
-
-static int __init spi_ids_init(void)
-{
-	PR_MSG("Spi id table Version %s\n", SPI_DRV_VERSION);
-	return 0;
-}
-/*****************************************************************************/
-
-static void __exit spi_ids_exit(void)
-{
-}
-/*****************************************************************************/
-
-module_init(spi_ids_init);
-module_exit(spi_ids_exit);
-
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Czyong");
-MODULE_DESCRIPTION("Spi id table");
-

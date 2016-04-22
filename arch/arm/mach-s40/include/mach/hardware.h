@@ -4,8 +4,10 @@
 #include <mach/platform.h>
 #include <mach/io.h>
 
-#define pcibios_assign_all_busses() (0)
-#define PCIBIOS_MIN_IO (0)
-#define PCIBIOS_MIN_MEM (0)
+#ifndef __ASSEMBLY__
+#  include <asm/io.h>
+#endif
+
+#define __io_address(n) (IOMEM(IO_ADDRESS(n)))
 
 #endif

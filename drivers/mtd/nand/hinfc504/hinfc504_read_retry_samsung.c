@@ -15,6 +15,7 @@
 static int hinfc504_samsung_set_rr_reg(struct hinfc_host *host,int param)
 {
 #define SAMSUNG_RR_CMD     0xA1
+	int regval;
 
 	unsigned char samsung_rr_params[15][4] = {
 		{0x00, 0x00, 0x00, 0x00},
@@ -36,6 +37,11 @@ static int hinfc504_samsung_set_rr_reg(struct hinfc_host *host,int param)
 
 	if (param >= 15)
 		param = (param % 15);
+
+	regval = hinfc_read(host, HINFC504_PWIDTH);
+	hinfc_write(host, 0xFFF, HINFC504_PWIDTH);
+
+	host->enable_ecc_randomizer(host, DISABLE, DISABLE);
 
 	hinfc_write(host, 1, HINFC504_DATA_NUM);
 
@@ -62,6 +68,10 @@ static int hinfc504_samsung_set_rr_reg(struct hinfc_host *host,int param)
 	hinfc_write(host, SAMSUNG_RR_CMD, HINFC504_CMD);
 	hinfc_write(host, HINFC504_WRITE_1CMD_2ADD_DATA, HINFC504_OP);
 	WAIT_CONTROLLER_FINISH();
+
+	host->enable_ecc_randomizer(host, ENABLE, ENABLE);
+
+	hinfc_write(host, regval, HINFC504_PWIDTH);
 
 	return 0;
 

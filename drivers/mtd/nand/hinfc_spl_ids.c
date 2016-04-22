@@ -5,43 +5,13 @@
  *    Create By Czyong
 ******************************************************************************/
 
-#include "hinfc_gen_os.h"
 #include "hinfc_gen.h"
 
 /*****************************************************************************/
 
-#ifndef _2K
-#  define _2K             (2048)
-#endif
-
-#ifndef _4K
-#  define _4K             (4096)
-#endif
-
-#ifndef _8K
-#  define _8K             (8192)
-#endif
-
-#ifndef _16K
-#  define _16K            (16384)
-#endif
-
-#define _128K           (0x20000)
-#define _256K           (0x40000)
-#define _512K           (0x80000)
-#define _768K           (_256K + _512K)
-#define _1M             (0x100000)
-#define _2M             (_1M << 1)
-#define _4M             (_2M << 1)
-
-#define _128M            (0x8000000UL)
-#define _256M            (0x10000000UL)
-#define _512M            (0x20000000UL)
-#define _1G             (0x40000000ULL)
-#define _2G             (0x80000000ULL)
-#define _4G            (0x100000000ULL)
-#define _8G            (0x200000000ULL)
-#define _16G           (0x400000000ULL)
+#define _4G           (0x100000000ULL)
+#define _8G           (0x200000000ULL)
+#define _16G          (0x400000000ULL)
 #define _64G          (0x1000000000ULL)
 
 /*****************************************************************************/
@@ -51,7 +21,7 @@ struct nand_flash_special_dev
 	unsigned char id[8];
 	int length;             /* length of id. */
 	unsigned long long chipsize;
-	struct nand_flash_dev *(*probe)(struct nand_flash_dev_ex *flash_dev_ex);
+	struct nand_flash_dev *(*probe)(struct nand_dev_t *nand_dev);
 	char *name;
 
 	unsigned long pagesize;
@@ -73,14 +43,14 @@ struct nand_flash_special_dev
 #define DRV_VERSION     "1.36"
 
 static struct nand_flash_dev *hynix_probe_v02(
-	struct nand_flash_dev_ex *flash_dev_ex)
+	struct nand_dev_t *nand_dev)
 {
-	unsigned char *id = flash_dev_ex->ids;
-	struct nand_flash_dev *type = &flash_dev_ex->flash_dev;
+	unsigned char *id = nand_dev->ids;
+	struct nand_flash_dev *type = &nand_dev->flash_dev;
 
-	int pagesizes[]   = {_2K, _4K, _8K, 0};
+	int pagesizes[]   = {SZ_2K, SZ_4K, SZ_8K, 0};
 	int oobsizes[]    = {128, 224, 448, 0, 0, 0, 0, 0};
-	int blocksizes[]  = {_128K, _256K, _512K, _768K, _1M, _2M, 0, 0};
+	int blocksizes[]  = {SZ_128K, SZ_256K, SZ_512K, (SZ_256K + SZ_512K), SZ_1M, SZ_2M, 0, 0};
 
 	int blocktype = (((id[3] >> 5) & 0x04) | ((id[3] >> 4) & 0x03));
 	int oobtype   = (((id[3] >> 2) & 0x03) | ((id[3] >> 4) & 0x04));
@@ -88,21 +58,21 @@ static struct nand_flash_dev *hynix_probe_v02(
 	type->options   = 0;
 	type->pagesize  = pagesizes[(id[3] & 0x03)];
 	type->erasesize = blocksizes[blocktype];
-	flash_dev_ex->oobsize = oobsizes[oobtype];
+	nand_dev->oobsize = oobsizes[oobtype];
 
 	return type;
 }
 /*****************************************************************************/
 
 static struct nand_flash_dev * samsung_probe_v02(
-	struct nand_flash_dev_ex *flash_dev_ex)
+	struct nand_dev_t *nand_dev)
 {
-	unsigned char *id = flash_dev_ex->ids;
-	struct nand_flash_dev *type = &flash_dev_ex->flash_dev;
+	unsigned char *id = nand_dev->ids;
+	struct nand_flash_dev *type = &nand_dev->flash_dev;
 
-	int pagesizes[]   = {_2K, _4K, _8K, 0};
+	int pagesizes[]   = {SZ_2K, SZ_4K, SZ_8K, 0};
 	int oobsizes[]    = {0, 128, 218, 400, 436, 0, 0, 0};
-	int blocksizes[]  = {_128K, _256K, _512K, _1M, 0, 0, 0, 0};
+	int blocksizes[]  = {SZ_128K, SZ_256K, SZ_512K, SZ_1M, 0, 0, 0, 0};
 
 	int blocktype = (((id[3] >> 5) & 0x04) | ((id[3] >> 4) & 0x03));
 	int oobtype   = (((id[3] >> 4) & 0x04) | ((id[3] >> 2) & 0x03));
@@ -110,7 +80,7 @@ static struct nand_flash_dev * samsung_probe_v02(
 	type->options   = 0;
 	type->pagesize  = pagesizes[(id[3] & 0x03)];
 	type->erasesize = blocksizes[blocktype];
-	flash_dev_ex->oobsize = oobsizes[oobtype];
+	nand_dev->oobsize = oobsizes[oobtype];
 
 	return type;
 }
@@ -130,13 +100,13 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.length    = 8,
 		.chipsize  = _8G,
 		.probe     = NULL,
-		.pagesize  = _8K,
-		.erasesize = _2M,
+		.pagesize  = SZ_8K,
+		.erasesize = SZ_2M,
 		.oobsize   = 744,
 		.options   = 0,
 		.read_retry_type = NAND_RR_MICRON,
 		.badblock_pos    = BBP_FIRST_PAGE,
-		.flags = NAND_RANDOMIZER | NAND_SYNCHRONOUS | NAND_ASYNCHRONOUS,
+		.flags = NAND_RANDOMIZER | NAND_CHIP_MICRON,
 	},
 	{        /* MLC 40bit/1k */
 		.name      = "MT29F32G08CBADA",
@@ -144,8 +114,8 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.length    = 8,
 		.chipsize  = _4G,
 		.probe     = NULL,
-		.pagesize  = _8K,
-		.erasesize = _2M,
+		.pagesize  = SZ_8K,
+		.erasesize = SZ_2M,
 		.oobsize   = 744,
 		.options   = 0,
 		.read_retry_type = NAND_RR_MICRON,
@@ -156,40 +126,43 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.name      = "MT29F8G08ABxBA",
 		.id        = {0x2C, 0x38, 0x00, 0x26, 0x85, 0x00, 0x00, 0x00},
 		.length    = 8,
-		.chipsize  = _1G,
+		.chipsize  = SZ_1G,
 		.probe     = NULL,
-		.pagesize  = _4K,
-		.erasesize = _512K,
+		.pagesize  = SZ_4K,
+		.erasesize = SZ_512K,
 		.oobsize   = 224,
 		.options   = 0,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE,
+		.flags = 0,
 	},
 	{        /* MLC 12bit/512 */
 		.name      = "MT29F16G08CBABx",
 		.id        = {0x2C, 0x48, 0x04, 0x46, 0x85, 0x00, 0x00, 0x00},
 		.length    = 8,
-		.chipsize  = _2G,
+		.chipsize  = SZ_2G,
 		.probe     = NULL,
-		.pagesize  = _4K,
-		.erasesize = _1M,
+		.pagesize  = SZ_4K,
+		.erasesize = SZ_1M,
 		.oobsize   = 224,
 		.options   = 0,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE,
+		.flags = 0,
 	},
 	{        /* MLC 24bit/1k */
 		.name      = "MT29F16G08CBACA",
 		.id        = {0x2C, 0x48, 0x04, 0x4A, 0xA5, 0x00, 0x00, 0x00},
 		.length    = 8,
-		.chipsize  = _2G,
+		.chipsize  = SZ_2G,
 		.probe     = NULL,
-		.pagesize  = _4K,
-		.erasesize = _1M,
+		.pagesize  = SZ_4K,
+		.erasesize = SZ_1M,
 		.oobsize   = 224,
 		.options   = 0,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE,
+		.flags = 0,
 	},
 	{        /* MLC 24bit/1k */
 		.name      = "MT29F32G08CBACA",
@@ -197,12 +170,13 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.length    = 8,
 		.chipsize  = _4G,
 		.probe     = NULL,
-		.pagesize  = _4K,
-		.erasesize = _1M,
+		.pagesize  = SZ_4K,
+		.erasesize = SZ_1M,
 		.oobsize   = 224,
 		.options   = 0,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE,
+		.flags = 0,
 	},
 	{        /* MLC 24bit/1k */
 		.name      = "MT29F64G08CxxAA",
@@ -210,12 +184,13 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.length    = 8,
 		.chipsize  = _8G,
 		.probe     = NULL,
-		.pagesize  = _8K,
-		.erasesize = _2M,
+		.pagesize  = SZ_8K,
+		.erasesize = SZ_2M,
 		.oobsize   = 448,
 		.options   = 0,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE,
+		.flags = 0,
 	},
 	{        /* MLC 24bit/1k 2CE */
 		.name      = "MT29F256G08CJAAA",
@@ -223,12 +198,13 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.length    = 8,
 		.chipsize  = _16G,
 		.probe     = NULL,
-		.pagesize  = _8K,
-		.erasesize = _2M,
+		.pagesize  = SZ_8K,
+		.erasesize = SZ_2M,
 		.oobsize   = 448,
 		.options   = 0,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE,
+		.flags = 0,
 	},
 	{        /* MLC 40bit/1k */
 		.name      = "MT29F256G08CMCBB",
@@ -236,64 +212,69 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.length    = 8,
 		.chipsize  = _8G,
 		.probe     = NULL,
-		.pagesize  = _8K,
-		.erasesize = _2M,
+		.pagesize  = SZ_8K,
+		.erasesize = SZ_2M,
 		.oobsize   = 744,
 		.options   = 0,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE,
+		.flags = 0,
 	},
 	{        /* SLC 8bit/512 */
 		.name      = "MT29F8G08ABACA",
 		.id        = {0x2C, 0xD3, 0x90, 0xA6, 0x64, 0x00, 0x00, 0x00},
 		.length    = 5,
-		.chipsize  = _1G,
+		.chipsize  = SZ_1G,
 		.probe     = NULL,
-		.pagesize  = _4K,
-		.erasesize = _256K,
+		.pagesize  = SZ_4K,
+		.erasesize = SZ_256K,
 		.oobsize   = 224,
 		.options   = 0,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE,
+		.flags = 0,
 	},
 	{        /* SLC 8bit/512 */
 		.name      = "MT29F4G08ABAEA",
 		.id        = {0x2C, 0xDC, 0x90, 0xA6, 0x54, 0x00, 0x00, 0x00},
 		.length    = 5,
-		.chipsize  = _512M,
+		.chipsize  = SZ_512M,
 		.probe     = NULL,
-		.pagesize  = _4K,
-		.erasesize = _256K,
+		.pagesize  = SZ_4K,
+		.erasesize = SZ_256K,
 		.oobsize   = 224,
 		.options   = 0,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE,
+		.flags = 0,
 	},
 	{        /* SLC 8bit/512 */
 		.name      = "MT29F2G08ABAFA",
 		.id        = {0x2C, 0xDA, 0x90, 0x95, 0x04, 0x00, 0x00, 0x00},
 		.length    = 5,
-		.chipsize  = _256M,
+		.chipsize  = SZ_256M,
 		.probe     = NULL,
-		.pagesize  = _2K,
-		.erasesize = _128K,
+		.pagesize  = SZ_2K,
+		.erasesize = SZ_128K,
 		.oobsize   = 224,
 		.options   = 0,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE,
+		.flags = 0,
 	},
 	{        /* SLC 8bit/512 */
 		.name      = "MT29F16G08ABACA",
 		.id        = {0x2C, 0x48, 0x00, 0x26, 0xA9, 0x00, 0x00, 0x00},
 		.length    = 5,
-		.chipsize  = _2G,
+		.chipsize  = SZ_2G,
 		.probe     = NULL,
-		.pagesize  = _4K,
-		.erasesize = _512K,
+		.pagesize  = SZ_4K,
+		.erasesize = SZ_512K,
 		.oobsize   = 224,
 		.options   = 0,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE,
+		.flags = 0,
 	},
 
 	/****************************** Toshaba *******************************/
@@ -302,14 +283,15 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.name      = "TC58NVG4D2FTA00",
 		.id        = {0x98, 0xD5, 0x94, 0x32, 0x76, 0x55, 0x00, 0x00},
 		.length    = 6,
-		.chipsize  = _2G,
+		.chipsize  = SZ_2G,
 		.probe     = NULL,
-		.pagesize  = _8K,
-		.erasesize = _1M,
+		.pagesize  = SZ_8K,
+		.erasesize = SZ_1M,
 		.oobsize   = 448,
 		.options   = 0,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
+		.flags = 0,
 	},
 	{       /* MLC 24bit/1k 32nm 2CE*/
 		.name      = "TH58NVG6D2FTA20",
@@ -317,12 +299,13 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.length    = 6,
 		.chipsize  = _4G,
 		.probe     = NULL,
-		.pagesize  = _8K,
-		.erasesize = _1M,
+		.pagesize  = SZ_8K,
+		.erasesize = SZ_1M,
 		.oobsize   = 448,
 		.options   = 0,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
+		.flags = 0,
 	},
 	{       /* MLC 40bit/1k 24nm */
 		.name      = "TC58NVG5D2HTA00 24nm",
@@ -330,8 +313,8 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.length    = 6,
 		.chipsize  = _4G,
 		.probe     = NULL,
-		.pagesize  = _8K,
-		.erasesize = _1M,
+		.pagesize  = SZ_8K,
+		.erasesize = SZ_1M,
 		.oobsize   = 640,
 		.options   = 0,
 		.read_retry_type = NAND_RR_TOSHIBA_24nm,
@@ -344,12 +327,13 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.length    = 5,
 		.chipsize  = _8G,
 		.probe     = NULL,
-		.pagesize  = _8K,
-		.erasesize = _2M,
+		.pagesize  = SZ_8K,
+		.erasesize = SZ_2M,
 		.oobsize   = 640,
 		.options   = 0,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
+		.flags = 0,
 	},
 	{       /* MLC 19nm */
 		.name      = "TC58NVG6DCJTA00 19nm",
@@ -357,8 +341,8 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.length    = 8,
 		.chipsize  = _8G,
 		.probe     = NULL,
-		.pagesize  = _16K,
-		.erasesize = _4M,
+		.pagesize  = SZ_16K,
+		.erasesize = SZ_4M,
 		.oobsize   = 1280,
 		.options   = 0,
 		.read_retry_type = NAND_RR_TOSHIBA_24nm,
@@ -371,22 +355,22 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.length    = 6,
 		.chipsize  = _4G,
 		.probe     = NULL,
-		.pagesize  = _16K,
-		.erasesize = _4M,
+		.pagesize  = SZ_16K,
+		.erasesize = SZ_4M,
 		.oobsize   = 1280,
 		.options   = 0,
 		.read_retry_type = NAND_RR_TOSHIBA_24nm,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
-		.flags = NAND_RANDOMIZER | NAND_SYNCHRONOUS | NAND_ASYNCHRONOUS,
+		.flags = NAND_RANDOMIZER | NAND_CHIP_TOSHIBA_TOGGLE_10,
 	},
 	{       /* SLC 8bit/512 */
 		.name      = "TC58NVG0S3HTA00",
 		.id        = {0x98, 0xF1, 0x80, 0x15, 0x72, 0x00, 0x00, 0x00},
 		.length    = 5,
-		.chipsize  = _128M,
+		.chipsize  = SZ_128M,
 		.probe     = NULL,
-		.pagesize  = _2K,
-		.erasesize = _128K,
+		.pagesize  = SZ_2K,
+		.erasesize = SZ_128K,
 		.oobsize   = 128,
 		.options   = 0,
 		.read_retry_type = NAND_RR_NONE,
@@ -396,6 +380,7 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		 * block.
 		 */
 		.badblock_pos    = BBP_FIRST_PAGE,
+		.flags = 0,
 	},
 	{       /* TLC 60bit/1k 19nm */
 		.name      = "TC58NVG5T2JTA00 19nm TLC",
@@ -403,8 +388,8 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.length    = 6,
 		.chipsize  = _4G,
 		.probe     = NULL,
-		.pagesize  = _8K,
-		.erasesize = _4M,
+		.pagesize  = SZ_8K,
+		.erasesize = SZ_4M,
 		.oobsize   = 1024,
 		.options   = 0,
 		.read_retry_type = NAND_RR_TOSHIBA_24nm,
@@ -421,15 +406,17 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.probe    = samsung_probe_v02,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_LAST_PAGE,
+		.flags = 0,
 	},
 	{       /* MLC 24bit/1KB */
 		.name      = "K9GAG08U0E",
 		.id        = {0xEC, 0xD5, 0x84, 0x72, 0x50, 0x42, 0x00, 0x00},
 		.length    = 6,
-		.chipsize  = _2G,
+		.chipsize  = SZ_2G,
 		.probe     = samsung_probe_v02,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
+		.flags = 0,
 	},
 	{       /* MLC 24bit/1KB */
 		.name     = "K9LBG08U0E",
@@ -439,28 +426,31 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.probe    = samsung_probe_v02,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
+		.flags = 0,
 	},
 	{       /* MLC 24bit/1KB */
 		.name     = "K9G8G08U0C",
 		.id       = {0xEC, 0xD3, 0x84, 0x72, 0x50, 0x42, 0x00, 0x00},
 		.length   = 6,
-		.chipsize = _1G,
+		.chipsize = SZ_1G,
 		.probe    = samsung_probe_v02,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
+		.flags = 0,
 	},
 	{        /* MLC 24bit/1k */
 		.name      = "K9GAG08U0F",
 		.id        = {0xEC, 0xD5, 0x94, 0x76, 0x54, 0x43, 0x00, 0x00},
 		.length    = 6,
-		.chipsize  = _2G,
+		.chipsize  = SZ_2G,
 		.probe     = NULL,
-		.pagesize  = _8K,
-		.erasesize = _1M,
+		.pagesize  = SZ_8K,
+		.erasesize = SZ_1M,
 		.oobsize   = 512,
 		.options   = 0,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
+		.flags = 0,
 	},
 	{        /* MLC */
 		.name      = "K9LBG08U0M",
@@ -468,12 +458,13 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.length    = 5,
 		.chipsize  = _4G,
 		.probe     = NULL,
-		.pagesize  = _4K,
-		.erasesize = _512K,
+		.pagesize  = SZ_4K,
+		.erasesize = SZ_512K,
 		.oobsize   = 128,
 		.options   = 0,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_LAST_PAGE,
+		.flags = 0,
 	},
 	{        /* MLC 24bit/1k */
 		.name      = "K9GBG08U0A 20nm",
@@ -481,8 +472,8 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.length    = 6,
 		.chipsize  = _4G,
 		.probe     = NULL,
-		.pagesize  = _8K,
-		.erasesize = _1M,
+		.pagesize  = SZ_8K,
+		.erasesize = SZ_1M,
 		.oobsize   = 640,
 		.options   = 0,
 		.read_retry_type = NAND_RR_SAMSUNG,
@@ -495,8 +486,8 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.length    = 6,
 		.chipsize  = _4G,
 		.probe     = NULL,
-		.pagesize  = _8K,
-		.erasesize = _1M,
+		.pagesize  = SZ_8K,
+		.erasesize = SZ_1M,
 		.oobsize   = 1024,
 		.options   = 0,
 		.read_retry_type = NAND_RR_SAMSUNG,
@@ -509,19 +500,21 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.name     = "H27UAG8T2A",
 		.id       = {0xAD, 0xD5, 0x94, 0x25, 0x44, 0x41, },
 		.length   = 6,
-		.chipsize = _2G,
+		.chipsize = SZ_2G,
 		.probe    = hynix_probe_v02,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
+		.flags = 0,
 	},
 	{       /* MLC */
 		.name     = "H27UAG8T2B",
 		.id       = {0xAD, 0xD5, 0x94, 0x9A, 0x74, 0x42, },
 		.length   = 6,
-		.chipsize = _2G,
+		.chipsize = SZ_2G,
 		.probe    = hynix_probe_v02,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
+		.flags = 0,
 	},
 	{       /* MLC */
 		.name     = "H27UBG8T2A",
@@ -531,6 +524,7 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.probe    = hynix_probe_v02,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
+		.flags = 0,
 	},
 	{       /* MLC 24bit/1K, 26nm TODO: Need read retry, chip is EOS */
 		.name      = "H27UBG8T2BTR 26nm",
@@ -538,8 +532,8 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.length    = 6,
 		.chipsize  = _4G,
 		.probe     = NULL,
-		.pagesize  = _8K,
-		.erasesize = _2M,
+		.pagesize  = SZ_8K,
+		.erasesize = SZ_2M,
 		.oobsize   = 640,
 		.options   = 0,
 		.read_retry_type = NAND_RR_HYNIX_BG_BDIE,
@@ -552,8 +546,8 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.length    = 6,
 		.chipsize  = _8G,
 		.probe     = NULL,
-		.pagesize  = _8K,
-		.erasesize = _2M,
+		.pagesize  = SZ_8K,
+		.erasesize = SZ_2M,
 		.oobsize   = 640,
 		.options   = 0,
 		.read_retry_type = NAND_RR_HYNIX_CG_ADIE,
@@ -566,8 +560,8 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.length    = 6,
 		.chipsize  = _4G,
 		.probe     = NULL,
-		.pagesize  = _8K,
-		.erasesize = _2M,
+		.pagesize  = SZ_8K,
+		.erasesize = SZ_2M,
 		.oobsize   = 640,
 		.options   = 0,
 		.read_retry_type = NAND_RR_HYNIX_BG_CDIE,
@@ -580,14 +574,15 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.name      = "P1UAGA30AT-GCA",
 		.id        = {0xC8, 0xD5, 0x14, 0x29, 0x34, 0x01, },
 		.length    = 6,
-		.chipsize  = _2G,
+		.chipsize  = SZ_2G,
 		.probe     = NULL,
-		.pagesize  = _4K,
-		.erasesize = _512K,
+		.pagesize  = SZ_4K,
+		.erasesize = SZ_512K,
 		.oobsize   = 218,
 		.options   = 0,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
+		.flags = 0,
 	},
 	{       /* MLC 4bit/512 */
 		/*
@@ -597,27 +592,29 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 		.name      = "PSU8GA30AT-GIA/ASU8GA30IT-G30CA",
 		.id        = {0xC8, 0xD3, 0x90, 0x19, 0x34, 0x01, },
 		.length    = 6,
-		.chipsize  = _1G,
+		.chipsize  = SZ_1G,
 		.probe     = NULL,
-		.pagesize  = _4K,
-		.erasesize = _256K,
+		.pagesize  = SZ_4K,
+		.erasesize = SZ_256K,
 		.oobsize   = 218,
 		.options   = 0,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
+		.flags = 0,
 	},
 	{        /* SLC 1bit/512 */
 		.name      = "PSU2GA30AT",
 		.id        = {0x7F, 0x7F, 0x7F, 0x7F, 0xC8, 0xDA, 0x00, 0x15, },
 		.length    = 8,
-		.chipsize  = _256M,
+		.chipsize  = SZ_256M,
 		.probe     = NULL,
-		.pagesize  = _2K,
-		.erasesize = _128K,
+		.pagesize  = SZ_2K,
+		.erasesize = SZ_128K,
 		.oobsize   = 64,
 		.options   = 0,
 		.read_retry_type = NAND_RR_NONE,
 		.badblock_pos    = BBP_FIRST_PAGE | BBP_LAST_PAGE,
+		.flags = 0,
 	},
 	{{0},0,0,0,0,0,0,0,0},
 };
@@ -625,17 +622,20 @@ static struct nand_flash_special_dev nand_flash_special_dev[] =
 #define NUM_OF_SPECIAL_DEVICE  \
 	(sizeof(nand_flash_special_dev)/sizeof(struct nand_flash_special_dev))
 
+int (*hinfc_param_adjust)(struct mtd_info *, struct nand_chip *, struct nand_dev_t *) = NULL;
+
+static struct nand_dev_t __nand_dev;
 /*****************************************************************************/
 
-struct nand_flash_dev * nand_get_flash_type_ex(struct mtd_info *mtd,
-	struct nand_chip *chip, struct nand_flash_dev_ex *flash_dev_ex)
+static struct nand_flash_dev *hinfc_nand_probe(struct mtd_info *mtd,
+					       struct nand_chip *chip,
+					       struct nand_dev_t *nand_dev)
 {
 	struct nand_flash_special_dev *spl_dev;
-	unsigned char *byte = flash_dev_ex->ids;
-	struct nand_flash_dev *flash_type = &flash_dev_ex->flash_dev;
+	unsigned char *byte = nand_dev->ids;
+	struct nand_flash_dev *type = &nand_dev->flash_dev;
 
-	PR_MSG("Nand ID: 0x%02X 0x%02X 0x%02X 0x%02X"
-		" 0x%02X 0x%02X 0x%02X 0x%02X\n",
+	hinfc_pr_msg("Nand ID: 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X\n",
 		byte[0], byte[1], byte[2], byte[3],
 		byte[4], byte[5], byte[6], byte[7]);
 
@@ -644,135 +644,100 @@ struct nand_flash_dev * nand_get_flash_type_ex(struct mtd_info *mtd,
 			continue;
 
 		if (spl_dev->probe) {
-			flash_type = spl_dev->probe(flash_dev_ex);
+			type = spl_dev->probe(nand_dev);
 		} else {
-			flash_type->options   = spl_dev->options;
-			flash_type->pagesize  = spl_dev->pagesize;
-			flash_type->erasesize = spl_dev->erasesize;
-			flash_dev_ex->oobsize = spl_dev->oobsize;
+			type->options   = spl_dev->options;
+			type->pagesize  = spl_dev->pagesize;
+			type->erasesize = spl_dev->erasesize;
+			nand_dev->oobsize = spl_dev->oobsize;
 		}
 
-		flash_dev_ex->read_retry_type = spl_dev->read_retry_type;
-		flash_dev_ex->flags = spl_dev->flags;
+		nand_dev->read_retry_type = spl_dev->read_retry_type;
+		nand_dev->flags = spl_dev->flags;
 
-		flash_type->id = byte[1];
-		flash_type->chipsize = (unsigned long)(spl_dev->chipsize >> 20);
-		flash_type->name = spl_dev->name;
-		return flash_type;
+		type->id[1] = byte[1];
+		type->chipsize = (unsigned long)(spl_dev->chipsize >> 20);
+		type->name = spl_dev->name;
+		return type;
 	}
-	flash_dev_ex->read_retry_type = NAND_RR_NONE;
+	nand_dev->read_retry_type = NAND_RR_NONE;
 
 	return NULL;
 }
 /*****************************************************************************/
 
-void nand_show_info(struct nand_flash_dev_ex *flash_dev_ex,
-		    struct mtd_info *mtd,
-		    char *vendor,
-		    char *chipname)
+struct nand_flash_dev *hinfc_get_flash_type(struct mtd_info *mtd,
+					    struct nand_chip *chip,
+					    u8 *id_data, int *busw)
 {
-	char buf[20];
+	struct nand_flash_dev *type;
+	struct nand_dev_t *nand_dev = &__nand_dev;
 
-	PR_MSG("Nand: %s %s ", vendor, chipname);
+	memset(nand_dev, 0, sizeof(struct nand_dev_t));
+	memcpy(nand_dev->ids, id_data, 8);
 
-	if (IS_RANDOMIZER(flash_dev_ex))
-		PR_MSG("Randomizer ");
+	if (!hinfc_nand_probe(mtd, chip, nand_dev))
+		return NULL;
 
-	if (flash_dev_ex->read_retry_type != NAND_RR_NONE)
-		PR_MSG("Read-Retry ");
+	type = &nand_dev->flash_dev;
 
-	PR_MSG("\n");
+	if (!mtd->name)
+		mtd->name = type->name;
 
-	PR_MSG("Nand(%s): ", flash_dev_ex->start_type);
+	chip->chipsize = (uint64_t)type->chipsize << 20;
+	mtd->erasesize = type->erasesize;
+	mtd->writesize = type->pagesize;
+	mtd->oobsize   = nand_dev->oobsize;
+	*busw = (type->options & NAND_BUSWIDTH_16);
 
-	PR_MSG("Block:%sB ", ultohstr(mtd->erasesize, buf, sizeof(buf)));
-	PR_MSG("Page:%sB ", ultohstr(mtd->writesize, buf, sizeof(buf)));
-	PR_MSG("OOB:%sB ", ultohstr(flash_dev_ex->oobsize, buf, sizeof(buf)));
-	PR_MSG("ECC:%s ", nand_ecc_name(flash_dev_ex->ecctype));
+	return type;
 }
 /*****************************************************************************/
 
-void nand_show_chip(struct nand_chip *chip)
+void hinfc_nand_param_adjust(struct mtd_info *mtd, struct nand_chip *chip)
+{
+	struct nand_dev_t *nand_dev = &__nand_dev;
+
+	if (!nand_dev->oobsize)
+		nand_dev->oobsize = mtd->oobsize;
+
+	if (hinfc_param_adjust)
+		hinfc_param_adjust(mtd, chip, nand_dev);
+}
+/*****************************************************************************/
+
+void hinfc_show_info(struct mtd_info *mtd, char *vendor, char *chipname)
+{
+	char buf[20];
+	struct nand_dev_t *nand_dev = &__nand_dev;
+
+	hinfc_pr_msg("Nand: %s %s ", vendor, chipname);
+
+	if (IS_NAND_RANDOM(nand_dev))
+		hinfc_pr_msg("Randomizer ");
+
+	if (nand_dev->read_retry_type != NAND_RR_NONE)
+		hinfc_pr_msg("Read-Retry ");
+
+	hinfc_pr_msg("\n");
+
+	if (nand_dev->start_type)
+		hinfc_pr_msg("Nand(%s): ", nand_dev->start_type);
+	else
+		hinfc_pr_msg("Nand: ");
+
+	hinfc_pr_msg("Block:%sB ", ultohstr(mtd->erasesize, buf, sizeof(buf)));
+	hinfc_pr_msg("Page:%sB ", ultohstr(mtd->writesize, buf, sizeof(buf)));
+	hinfc_pr_msg("OOB:%dB ", nand_dev->oobsize);
+	hinfc_pr_msg("ECC:%s ", nand_ecc_name(nand_dev->ecctype));
+}
+/*****************************************************************************/
+
+void hinfc_show_chipsize(struct nand_chip *chip)
 {
 	char buf[20];
 
-	PR_MSG("Chip:%sB*%d\n",
-	       ultohstr(chip->chipsize, buf, sizeof(buf)),
-	       chip->numchips);
+	hinfc_pr_msg("Chip:%sB*%d\n",
+		     ultohstr(chip->chipsize, buf, sizeof(buf)),
+		     chip->numchips);
 }
-/*****************************************************************************/
-#if 0 /* fastboot pass Nand id to kernel. */
-
-struct nand_tag
-{
-	unsigned char id[8];
-	int length;
-	unsigned long long chipsize;
-	unsigned long pagesize;
-	unsigned long erasesize;
-	unsigned long oobsize;
-	unsigned long options;
-	char name[16];
-};
-/*****************************************************************************/
-
-static int __init parse_nand_id(const struct tag *tag)
-{
-	char buf[20];
-	static char chipname[16];
-	struct nand_tag *nandtag;
-	struct nand_flash_special_dev *spldev
-		= nand_flash_special_dev + NUM_OF_SPECIAL_DEVICE - 2;
-
-	if (tag->hdr.size != ((sizeof(struct tag_header)
-		+ sizeof(struct nand_tag)) >> 2))
-	{
-		printk(KERN_NOTICE "%s(%d): tag->hdr.size(%d) too small.\n",
-			__FUNCTION__, __LINE__, tag->hdr.size);
-		return 0;
-	}
-
-	nandtag = (struct nand_tag *)&tag->u;
-
-	strncpy(chipname, nandtag->name, 16);
-	chipname[sizeof(chipname)-1] = '\0';
-
-	memcpy(spldev->id, nandtag->id, 8);
-	spldev->length = nandtag->length;
-	spldev->chipsize = nandtag->chipsize;
-	spldev->probe = NULL;
-	spldev->name  = chipname;
-
-	spldev->pagesize = nandtag->pagesize;
-	spldev->erasesize = nandtag->erasesize;
-	spldev->oobsize = nandtag->oobsize;
-	spldev->options = nandtag->options;
-
-	printk(KERN_NOTICE "NAND TAG: hdr.tag: 0x%08X, hdr.size: %d\n",
-		tag->hdr.tag, tag->hdr.size);
-	printk(KERN_NOTICE "(%dByte): 0x%02X 0x%02X 0x%02X 0x%02X"
-		" 0x%02X 0x%02X 0x%02X 0x%02X\n",
-		nandtag->length,
-		nandtag->id[0], nandtag->id[1],
-		nandtag->id[2], nandtag->id[3],
-		nandtag->id[4], nandtag->id[5],
-		nandtag->id[6], nandtag->id[7]);
-	printk("Block:%s ", ultohstr(nandtag->erasesize,
-		buf, sizeof(buf)));
-	printk("Page:%s ", ultohstr(nandtag->pagesize,
-		buf, sizeof(buf)));
-	printk("Chip:%s ", ultohstr(nandtag->chipsize,
-		buf, sizeof(buf)));
-	printk("OOB:%s ", ultohstr(nandtag->oobsize,
-		buf, sizeof(buf)));
-	printk("Opt:0x%08lX ", nandtag->options);
-	printk("Name:(%s)",    nandtag->name);
-	printk("\n");
-
-	return 0;
-}
-
-/* turn to ascii is "N_ID" */
-__tagtable(0x4E5F4944, parse_nand_id);
-
-#endif

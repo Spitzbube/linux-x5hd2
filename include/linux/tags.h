@@ -20,4 +20,6 @@
  */
 int get_param_data(const char *name, char *buf, unsigned int buflen);
 
+int set_param_data(const char *name, char *buf, unsigned int buflen);
+
 #endif  /* __TAGS_H__ */

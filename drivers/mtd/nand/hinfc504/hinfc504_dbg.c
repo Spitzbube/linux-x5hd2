@@ -46,16 +46,8 @@ struct hinfc504_dbg_inf_t *hinfc504_dbg_inf[] = {
 
 static struct dentry *dbgfs_root = NULL;
 static struct hinfc_host *dbgfs_host = NULL;
-static char *dbgfs_options = NULL;
+
 /*****************************************************************************/
-
-static int __init dbgfs_options_setup(char *s)
-{
-	dbgfs_options = s;
-	return 1;
-}
-__setup("nanddbgfs=", dbgfs_options_setup);
-
 static ssize_t dbgfs_debug_read(struct file *filp, char __user *buffer,
 				size_t count, loff_t *ppos)
 {
@@ -220,8 +212,8 @@ int hinfc504_dbgfs_debug_init(struct hinfc_host *host)
 
 	dbgfs_host = host;
 
-	if (dbgfs_options)
-		dbgfs_debug_ops(dbgfs_options, hinfc504_dbg_inf);
+	if (nand_dbgfs_options)
+		dbgfs_debug_ops(nand_dbgfs_options, hinfc504_dbg_inf);
 
 	return 0;
 

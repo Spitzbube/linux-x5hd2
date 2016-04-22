@@ -29,28 +29,6 @@ static char __initdata default_cmd[MMZ_SETUP_CMDLINE_LEN] = "ddr,0,0,160M";
 #endif
 static int use_bootargs;
 
-static unsigned long _strtoul_ex(const char *s, char **ep, unsigned int base)
-{
-	char *__end_p;
-	unsigned long __value;
-
-	__value = simple_strtoul(s, &__end_p, base);
-	switch (*__end_p) {
-	case 'm':
-	case 'M':
-		__value <<= 10;
-	case 'k':
-	case 'K':
-		__value <<= 10;
-	if (ep)
-		(*ep) = __end_p + 1;
-	default:
-	break;
-	}
-	return __value;
-}
-
-
 static int __init hisi_mmz_parse_cmdline(char *s)
 {
 	char *line, *tmp;
@@ -68,22 +46,23 @@ static int __init hisi_mmz_parse_cmdline(char *s)
 			if (++i == ARRAY_SIZE(argv))
 				break;
 
+		hisi_zone[num_zones].pdev.coherent_dma_mask = DMA_BIT_MASK(64);
 		if (i == 4) {
 			strlcpy(hisi_zone[num_zones].name, argv[0], NAME_LEN_MAX);
-				hisi_zone[num_zones].gfp = _strtoul_ex(argv[1], NULL, 0);
-				hisi_zone[num_zones].phys_start = _strtoul_ex(argv[2], NULL, 0);
-				hisi_zone[num_zones].nbytes = _strtoul_ex(argv[3], NULL, 0);
+			hisi_zone[num_zones].gfp = memparse(argv[2], NULL);
+			hisi_zone[num_zones].phys_start = memparse(argv[2], NULL);
+			hisi_zone[num_zones].nbytes = memparse(argv[3], NULL);
 		}
 
 		else if (i == 6) {
 			strlcpy(hisi_zone[num_zones].name, argv[0], NAME_LEN_MAX);
-			hisi_zone[num_zones].gfp = _strtoul_ex(argv[1], NULL, 0);
-			hisi_zone[num_zones].phys_start = _strtoul_ex(argv[2], NULL, 0);
-			hisi_zone[num_zones].nbytes = _strtoul_ex(argv[3], NULL, 0);
-			hisi_zone[num_zones].alloc_type = _strtoul_ex(argv[4], NULL, 0);
-			hisi_zone[num_zones].block_align = _strtoul_ex(argv[5], NULL, 0);
+			hisi_zone[num_zones].gfp = memparse(argv[1], NULL);
+			hisi_zone[num_zones].phys_start = memparse(argv[2], NULL);
+			hisi_zone[num_zones].nbytes = memparse(argv[3], NULL);
+			hisi_zone[num_zones].alloc_type = memparse(argv[4], NULL);
+			hisi_zone[num_zones].block_align = memparse(argv[5], NULL);
 		} else {
-			printk(KERN_ERR"hisi ion parameter is not correct\n");
+			pr_err("hisi ion parameter is not correct\n");
 			continue;
 		}
 
@@ -96,7 +75,7 @@ static int __init hisi_mmz_parse_cmdline(char *s)
 }
 early_param("mmz", hisi_mmz_parse_cmdline);
 
-struct cma_zone*  hisi_get_cma_zone(const char *name)
+struct cma_zone *hisi_get_cma_zone(const char *name)
 {
 	int i = 0;
 
@@ -128,20 +107,19 @@ EXPORT_SYMBOL(hisi_get_cma_device);
 
 int hisi_declare_heap_memory(void)
 {
-	int i ;
+	int i;
 	int ret = 0;
 
 	if (use_bootargs == 0)
 		hisi_mmz_parse_cmdline(default_cmd);
-
 	for (i = 0; i < num_zones; i++) {
-		ret = dma_declare_contiguous(&hisi_zone[i].pdev, hisi_zone[i].nbytes, hisi_zone[i].phys_start, 0);
+		ret = dma_declare_contiguous(&hisi_zone[i].pdev, \
+				hisi_zone[i].nbytes, hisi_zone[i].phys_start, 0);
 		if (!ret)
-			panic("declare configuous memory name :%s   base: %lu size :%luMB failed",\
+			panic("declare configuous memory name :%s   base: %lu size :%luMB failed", \
 				hisi_zone[i].name, hisi_zone[i].phys_start, hisi_zone[i].nbytes>>20);
-		hisi_zone[i].phys_start = ret ;
+		hisi_zone[i].phys_start = ret;
 		/*FIXME need to fix dma_declare_contiguous return value &&value type*/
 	}
-
 	return ret;
 }

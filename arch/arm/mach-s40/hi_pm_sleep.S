@@ -58,8 +58,7 @@
 #define SCU_ACCESS_CONTROL_OFFSET       (0x50)
 #define SCU_NONSEC_CONTROL_OFFSET       (0x54)
 
-	.macro	mode_save, rd
-
+.macro mode_save, rd
 	@ save current mode r0~r12, r14, so we can use them
 	STMIA	\rd!, {sp}
 
@@ -93,51 +92,48 @@
 	STMIA	\rd!, {r4, r8 - r12, sp, LR}
 
 	CPS	#MODE_SVC
+.endm
 
+.macro mode_restore, rd
+	CPS	#MODE_FIQ
+	LDMDB	\rd!, {r4, r8 - r12, sp, LR}
+	MSR	SPSR, r4
 
-	.endm
-        
-    .macro  mode_restore, rd
-        
-    CPS #MODE_FIQ
-    LDMDB   \rd!, {r4, r8 - r12, sp, LR}
-    MSR SPSR, r4
-        
-    CPS #MODE_IRQ
-    LDMDB   \rd!, {r4, sp, lr}
-    MSR SPSR, r4
-        
-    @ switch to Undefined mode
-    CPS #MODE_UND
-    LDMDB   \rd!, {r4, sp, lr}
-    MSR SPSR, r4
-        
-    @ switch to Abort mode
-    CPS #MODE_ABT
-    LDMDB   \rd!, {r4, sp, lr}
-    MSR SPSR, r4
-        
-    CPS #MODE_SYS
-    LDMDB   \rd!, {r4, r8 - r12, sp, LR}
-    MSR SPSR, r4
-    
-    CPS	#MODE_SVC
-    
+	CPS	#MODE_IRQ
+	LDMDB	\rd!, {r4, sp, lr}
+	MSR	SPSR, r4
+
+	@ switch to Undefined mode
+	CPS	#MODE_UND
+	LDMDB	\rd!, {r4, sp, lr}
+	MSR	SPSR, r4
+
+	@ switch to Abort mode
+	CPS	#MODE_ABT
+	LDMDB	\rd!, {r4, sp, lr}
+	MSR	SPSR, r4
+
+	CPS	#MODE_SYS
+	LDMDB	\rd!, {r4, r8 - r12, sp, LR}
+	MSR	SPSR, r4
+
+	CPS	#MODE_SVC
+
 	@ restore the current CPSR and SPSR
 	LDMDB	\rd!, {r4 - r5}
 	MSR	CPSR_fcx, r4
 	MSR	SPSR, r5
-    
+
 	@ restore sp
 	LDMDB	\rd!, {sp}
 
-    .endm
+.endm
 
-    .macro  cp15_save, rd        
+.macro cp15_save, rd
 	/* c1 control register */
 	mrc	p15, 0, r4, c1, c0, 0		@ Save control register
 	stmia	\rd!, {r4}
-	
+
 	/* c1 and c2 registers */
 	mrc	p15, 0, r4, c1, c0, 2		@ CPACR
 	mrc	p15, 0, r5, c2, c0, 0		@ TTBR0
@@ -156,26 +152,28 @@
 	mrc	p15, 0, r4, c13, c0, 1		@ Context ID (CONTEXTIDX)
 	mrc	p15, 0, r5, c13, c0, 2		@ User r/w thread ID (TPIDRURW)
 	mrc	p15, 0, r6, c12, c0, 0		@ Secure or NS VBAR
-	stmia	\rd!, {r4-r6}
+	mrc	p15, 0, r7, c13, c0, 4		@ PL1 only Thread ID (TPIDRPRW), used by percpu offset
+	stmia	\rd!, {r4-r7}
 
-    .endm
+.endm
 
-    .macro  cp15_restore, rd     
+.macro cp15_restore, rd
 	/* c12, c13 and CPSR registers */
-	ldmdb	\rd!, {r4-r6}
+	ldmdb	\rd!, {r4-r7}
 	mcr	p15, 0, r4, c13, c0, 1		@ Context ID
 	mcr	p15, 0, r5, c13, c0, 2		@ User r/w thread ID
 	mcr	p15, 0, r6, c12, c0, 0		@ Secure or NS VBAR
-                
-    /* c3 and c10 registers */
-    ldmdb   \rd!,{r4-r7}
-    mcr p15, 0, r4, c3, c0, 0       @ DACR
-    mcr p15, 0, r5, c10, c2, 0      @ PRRR
-    mcr p15, 0, r6, c10, c2, 1      @ NMRR
-    mcr p15, 0, r7, c1, c0, 1       @ ACTLR
+	mcr	p15, 0, r7, c13, c0, 4		@ PL1 only Thread ID (TPIDRPRW), used by percpu offset
+
+	/* c3 and c10 registers */
+	ldmdb	\rd!,{r4-r7}
+	mcr	p15, 0, r4, c3, c0, 0		@ DACR
+	mcr	p15, 0, r5, c10, c2, 0		@ PRRR
+	mcr	p15, 0, r6, c10, c2, 1		@ NMRR
+	mcr	p15, 0, r7, c1, c0, 1		@ ACTLR
 
 	/* c1 and c2 registers */
-    ldmdb   \rd!,{r4-r7}
+	ldmdb	\rd!,{r4-r7}
 	mcr	p15, 0, r4, c1, c0, 2		@ CPACR
 	mcr	p15, 0, r5, c2, c0, 0		@ TTBR0
 	mcr	p15, 0, r6, c2, c0, 1		@ TTBR1
@@ -183,34 +181,34 @@
 
 	/* c1 control register */
 	ldmdb	\rd!, {r4}
-	bic r4, #5                      @ disable mmu and C bit
+	bic	r4, #5				@ disable mmu and C bit
 	mcr	p15, 0, r4, c1, c0, 0		@ Save control register
-    .endm
-                
-    @scu_save r1 - scu reg base
-    .macro  scu_save, rd
-	LDR    r2,[r1,#SCU_FILTER_START_OFFSET]
-	LDR    r3,[r1,#SCU_FILTER_END_OFFSET]
-	LDR    r4,[r1,#SCU_ACCESS_CONTROL_OFFSET]
-	LDR    r5,[r1,#SCU_NONSEC_CONTROL_OFFSET]
-	LDR    r6,[r1,#SCU_CONTROL_OFFSET]
-	LDR    r7,[r1,#SCU_POWER_STATE_OFFSET]
-	STMIA	\rd!, {r2-r7}
-    .endm
-        
-    .macro  scu_restore, rd
-    LDMDB  \rd!, {r2-r7}
-	STR    r2,[r1,#SCU_FILTER_START_OFFSET]
-	STR    r3,[r1,#SCU_FILTER_END_OFFSET]
-	STR    r4,[r1,#SCU_ACCESS_CONTROL_OFFSET]
-	STR    r5,[r1,#SCU_NONSEC_CONTROL_OFFSET]
+.endm
 
-	LDR    r8, =0xFFFF
-	STR    r8, [r1, #SCU_SEC_INVALID_REG_OFFSET]     @invalidate the duplicate TAG store
-	
-	STR    r6,[r1,#SCU_CONTROL_OFFSET]
-	STR    r7,[r1,#SCU_POWER_STATE_OFFSET]
-    .endm
+@scu_save r1 - scu reg base
+.macro scu_save, rd
+	LDR	r2,[r1,#SCU_FILTER_START_OFFSET]
+	LDR	r3,[r1,#SCU_FILTER_END_OFFSET]
+	LDR	r4,[r1,#SCU_ACCESS_CONTROL_OFFSET]
+	LDR	r5,[r1,#SCU_NONSEC_CONTROL_OFFSET]
+	LDR	r6,[r1,#SCU_CONTROL_OFFSET]
+	LDR	r7,[r1,#SCU_POWER_STATE_OFFSET]
+	STMIA	\rd!, {r2-r7}
+.endm
+
+.macro scu_restore, rd
+	LDMDB	\rd!, {r2-r7}
+	STR	r2,[r1,#SCU_FILTER_START_OFFSET]
+	STR	r3,[r1,#SCU_FILTER_END_OFFSET]
+	STR	r4,[r1,#SCU_ACCESS_CONTROL_OFFSET]
+	STR	r5,[r1,#SCU_NONSEC_CONTROL_OFFSET]
+
+	LDR	r8, =0xFFFF
+	STR	r8, [r1, #SCU_SEC_INVALID_REG_OFFSET]	@invalidate the duplicate TAG store
+
+	STR	r6,[r1,#SCU_CONTROL_OFFSET]
+	STR	r7,[r1,#SCU_POWER_STATE_OFFSET]
+.endm
 
 
 /*
@@ -222,125 +220,159 @@
  */
 ENTRY (hi_pm_sleep)
 store_current:
-    stmfd	sp!, {r0-r12, lr}		@ Save registers on stack
-    
-    ldr	r0, hi_pm_ddrbase
+	stmfd	sp!, {r0-r12, lr} @ Save registers on stack
 
-    /*--->save mode , cp15*/
-    mode_save r0
-    cp15_save r0
-    
-    ldr r1, scureg_base 
-    scu_save r0
+	ldr	r1, =hi_pm_ddrbase
+	ldr	r0, [r1]
 
-    mov r6, r0
+	/*--->save mode , cp15*/
+	mode_save r0
+	cp15_save r0
 
-	/*--->
+	ldr	r2, =scureg_base
+	ldr	r1, [r2]
+
+	scu_save r0
+
+	mov	r6, r0
+
+	/*
 	 * Flush all data from the L1 data cache before disabling
 	 * SCTLR.C bit.
 	 * Used Register: R0/R1/R2/R3/R4/R5/R7/R9/R10
 	 */
-	bl	v7_flush_dcache_all	
+	bl	v7_flush_dcache_all
 
-    /* disable C bit*/
+	/* disable C bit*/
 	mrc	p15, 0, r0, c1, c0, 0
 	bic	r0, r0, #(1 << 2)		@ Disable the C bit
 	mcr	p15, 0, r0, c1, c0, 0
 	isb
-	
-    /*---> SMP->AMP*/    
-    mrc p15, 0, r0, c1, c1, 2       @Read NSACR data
-    tst r0, #(1 << 18)
-    mrcne   p15, 0, r0, c1, c0, 1
-    bicne   r0, r0, #(1 << 6)               @SMP-->AMP
-    mcrne   p15, 0, r0, c1, c0, 1
-    isb
+
+	/* SMP->AMP*/
+	mrc	p15, 0, r0, c1, c1, 2		@Read NSACR data
+	tst	r0, #(1 << 18)
+	mrcne	p15, 0, r0, c1, c0, 1
+	bicne	r0, r0, #(1 << 6)		@SMP-->AMP
+	mcrne	p15, 0, r0, c1, c0, 1
+	isb
 
 	/** write domain access to get the domain access right  **/
 	ldr	r0, =0xFFFFFFFF
 	mcr	p15, 0, r0, c3, c0, 0
-    
-	@ save end addr 
-    ldr r1, =hi_pm_cpu0_len
-    ldr r0, hi_pm_ddrbase
-    sub r0, r6, r0
-    str r0, [r1]
-   
+
+	@ save end addr
+	ldr	r1, =hi_pm_cpu0_len
+	ldr	r2, =hi_pm_ddrbase
+	ldr	r0, [r2]
+	sub	r0, r6, r0
+	str	r0, [r1]
+
 store_resume:
-    ldr	r5, =(__virt_to_phys(resume_code))
-    ldr r4, =hi_sc_virtbase
-    ldr r4, [r4]
-    str r5, [r4, #REG_SC_GEN30]
-    ldr r0, =IO_ADDRESS(0xf8a9007C)
-    ldr r0, [r0]
-    and r0, r0, #0xFF00
-    ldr r1, =0x4000
-    cmp r0, r1
-    bne enable_mcu
-    ldr r5, =0x0
-    str r5, [r4, #REG_SC_GEN28]
+	ldr	r5, =(__virt_to_phys(resume_code))
+	ldr	r4, =hi_sc_virtbase
+	ldr	r4, [r4]
+#ifdef CONFIG_CA_WARKUP_CHECK
+	str	r5, [r4, #REG_SC_GEN9]
+#else
+	str	r5, [r4, #REG_SC_GEN30]
+#endif /* CONFIG_CA_WARKUP_CHECK */
+	ldr	r0, =IO_ADDRESS(0xf8a9007C)
+	ldr	r0, [r0]
+	and	r0, r0, #0xFF00
+	ldr	r1, =0x4000
+	cmp	r0, r1
+#ifdef CONFIG_CA_WARKUP_CHECK
+	bne	entry_ddr_wakeup_check
+#else
+	bne	enable_mcu
+#endif
+	ldr	r5, =0x0
+	str	r5, [r4, #REG_SC_GEN28]
+
+#ifdef CONFIG_CA_WARKUP_CHECK
+entry_ddr_wakeup_check:
+	ldr	r0, = _ddr_wakeup_check_code_begin
+	ldr	r0, [r0]
+	ldr	r1, =hi_sram_virtbase
+	ldr 	r1, [r1]
+	ldr	r2, = _ddr_wakeup_check_code_end
+	ldr	r2, [r2]
+loop_copy_to_ddr:
+	ldmia	r0!, {r3-r10}
+	stmia	r1!, {r3-r10}
+	cmp	r0,r2
+	ble	loop_copy_to_ddr
+
+	@disable mmu
+	MRC	p15, 0, r1, c1, c0, 0
+	bic	r1, #1
+	MCR	p15, 0, r1, c1, c0, 0
+
+	@addr: 0xffff0000
+	mov	r1, #0x0000
+	movt	r1, #0xffff
+	BX	r1
+	b .
+#endif /* CONFIG_CA_WARKUP_CHECK */
 
 enable_mcu:
-    ldr r1, =IO_ADDRESS(MCU_START_CTRL)
-    ldr r2, [r1]
-    orr r2, #0x1
-    str r2, [r1]    
+	ldr	r1, =IO_ADDRESS(MCU_START_CTRL)
+	ldr	r2, [r1]
+	orr	r2, #0x1
+	str	r2, [r1]
 
 go_wfi:
-    mov r1, #0x10
+	mov	r1, #0x10
 loop_wfi:
-    dsb
-    isb   
-    
-    wfi
-    
+	dsb
+	isb
+	wfi
 	nop
 	nop
 	nop
-	nop 
+	nop
 	nop
 	nop
 	nop
 	nop
 
-    ldr r4, =hi_sc_virtbase
-    add r1, #0x1
-    str r1, [r4, #REG_SC_GEN8]
-    b loop_wfi
-    
+	ldr	r4, =hi_sc_virtbase
+	add	r1, #0x1
+	str	r1, [r4, #REG_SC_GEN8]
+	b	loop_wfi
+
 	nop
 	nop
 	nop
-	nop 
+	nop
 	nop
 	nop
 	nop
 	nop
 
 resume_code:
-    @b .
-#if 1    
 _serial_init:
-    mov r3, #0
-    movt r3, #0xf8b0
-    mov     r2, #0
-    str     r2, [r3, #48]
-#ifdef CONFIG_S40_FPGA    
-    add     r2, r2, #29
-    str     r2, [r3, #36]
-    mov     r2, #19
-    str     r2, [r3, #40]
+	mov	r3, #0
+	movt	r3, #0xf8b0
+	mov	r2, #0
+	str	r2, [r3, #48]
+#ifdef CONFIG_S40_FPGA
+	add	r2, r2, #29
+	str	r2, [r3, #36]
+	mov	r2, #19
+	str	r2, [r3, #40]
 #else
-    add     r2, r2, #46
-    str     r2, [r3, #36]
-    mov     r2, #32
-    str     r2, [r3, #40]
+	add	r2, r2, #46
+	str	r2, [r3, #36]
+	mov	r2, #32
+	str	r2, [r3, #40]
 #endif
-    movw	a3, #112
-    str     r2, [r3, #44]
-    movw    r2, #769
-    str     r2, [r3, #48]
-#endif
+	movw	a3, #112
+	str	r2, [r3, #44]
+	movw	r2, #769
+	str	r2, [r3, #48]
+
 	@ write domain access to get the domain access right
 	ldr	r7, =0xFFFFFFFF
 	mcr	p15, 0, r7, c3, c0, 0
@@ -349,55 +381,53 @@ _serial_init:
 	mrc	p15, 0, r1, c1, c0, 0
 	bic	r1, #1
 	mcr	p15, 0, r1, c1, c0, 0
-	
+
 	@ get end addr of context
 	ldr	r1, =(__virt_to_phys(hi_pm_cpu0_len))
-	ldr r0, [r1]
-	ldr r1, =(__virt_to_phys(hi_pm_phybase))
-	ldr r1, [r1]
-	add r0, r1, r0
+	ldr	r0, [r1]
+	ldr	r1, =(__virt_to_phys(hi_pm_phybase))
+	ldr	r1, [r1]
+	add	r0, r1, r0
 
 
-    @ scu restore
-    ldr r1, =(REG_BASE_A9_PERI + REG_A9_PERI_SCU)
-    scu_restore r0    
+	@ scu restore
+	ldr	r1, =(REG_BASE_A9_PERI + REG_A9_PERI_SCU)
+	scu_restore r0
 
-    cp15_restore r0
-    mode_restore r0
-    
+	cp15_restore r0
+	mode_restore r0
 
 	ldr	r9,  =resume_virt
-   
-    /*
-     * Invalidate L1 I/D
-     */
-    mov r0, #0                   /* set up for MCR */
-    mcr p15, 0, r0, c8, c7, 0    /* invalidate TLBs */
-    mcr p15, 0, r0, c7, c5, 0    /* invalidate icache */
 
-    /* Invalidate L1 D-cache */
-    mcr p15, 2, r0, c0, c0, 0    /* select L1 data cache */
-    mrc p15, 1, r3, c0, c0, 0    /* Read Current Cache Size Identification Register */
-    movw r1, #0x1ff              /* replace ldr r1, =0x1ff */
-    and r3, r1, r3, LSR #13      /* r3 = (number of sets -1) */
-    mov r0, #0
+	/*
+	 * Invalidate L1 I/D
+	 */
+	mov	r0, #0                   /* set up for MCR */
+	mcr	p15, 0, r0, c8, c7, 0    /* invalidate TLBs */
+	mcr	p15, 0, r0, c7, c5, 0    /* invalidate icache */
+
+	/* Invalidate L1 D-cache */
+	mcr	p15, 2, r0, c0, c0, 0    /* select L1 data cache */
+	mrc	p15, 1, r3, c0, c0, 0    /* Read Current Cache Size Identification Register */
+	movw	r1, #0x1ff               /* replace ldr r1, =0x1ff */
+	and	r3, r1, r3, LSR #13      /* r3 = (number of sets -1) */
+	mov	r0, #0
 l1_way_loop:
-    mov r1, #0                  /* r1->set counter */
+	mov	r1, #0                   /* r1->set counter */
 l1_line_loop:
-    mov r2, r0, LSL #30
-    orr r2, r1, LSL #5           /* r2->set/way cache-op format */
-    mcr     p15, 0, r2, c7, c6, 2    /* Invalidate line described by r2 */
-    add r1, r1, #1               /* Increment set counter */
-    cmp r1, r3                   /* Check if the last set is reached... */
-    ble l1_line_loop                /* if not, continue the set_loop */
-    add r0, r0, #1               /* else, Increment way counter */
-    cmp r0, #4                   /* Check if the last way is reached... */
-    blt l1_way_loop                 /* if not, continue the way_loop */
+	mov	r2, r0, LSL #30
+	orr	r2, r1, LSL #5           /* r2->set/way cache-op format */
+	mcr	p15, 0, r2, c7, c6, 2    /* Invalidate line described by r2 */
+	add	r1, r1, #1               /* Increment set counter */
+	cmp	r1, r3                   /* Check if the last set is reached... */
+	ble	l1_line_loop             /* if not, continue the set_loop */
+	add	r0, r0, #1               /* else, Increment way counter */
+	cmp	r0, #4                   /* Check if the last way is reached... */
+	blt	l1_way_loop              /* if not, continue the way_loop */
 
-    
 	@ enable mmu and C
-	mrc p15, 0, r1, c1, c0, 0
-	orr r1, #5
+	mrc	p15, 0, r1, c1, c0, 0
+	orr	r1, #5
 	mcr	p15, 0, r1, c1, c0, 0
 
 	bx	r9
@@ -411,22 +441,18 @@ l1_line_loop:
 	NOP
 	NOP
 
-    
 resume_virt:
-    @b .
+	mrc	p15, 0, r0, c1, c1, 2       @Read NSACR data
+	tst	r0, #(1 << 18)
+	mrcne	p15, 0, r0, c1, c0, 1
+	orrne	r0, r0, #(1 << 6)            @AMP-->SMP
+	mcrne	p15, 0, r0, c1, c0, 1
+	isb
 
-    mrc p15, 0, r0, c1, c1, 2       @Read NSACR data
-    tst r0, #(1 << 18)
-    mrcne   p15, 0, r0, c1, c0, 1
-    orrne   r0, r0, #(1 << 6)               @AMP-->SMP
-    mcrne   p15, 0, r0, c1, c0, 1
-    isb
-
-    
 	@resume current mode registers
 	ldmfd	sp!, {r0-r12, lr}
 
-	/*  go back to the call point */
+	/* go back to the call point */
 	mov	pc, lr
 	nop
 	nop
@@ -434,139 +460,7 @@ resume_virt:
 	b .
 ENDPROC(hi_pm_sleep)
 
-/*
- *  cp_slavecpu_code_to_sram()
- *
- *  copy code to sram for slave cpus.
- *
- *  Registers:
- *  none
- */
-ENTRY(cp_slavecpu_code_to_sram)
-    stmfd sp!, {r4 - r11, lr}            @ bakeup register
-
-    ldr r0, =SRAM_BASE_VIRT
-#if 1    
-    mov r3, #0x12
-    str r3, [r0, #0x100]
-#endif    
-    adr r1, slave_cpu_code_start
-    adr r2, slave_cpu_code_flag_head
-    sub r3, r2, r1                        @ r3 = r2-r1, offset of slave_cpu_code_flag_head
-    ldr r3, [r0, r3]
-    ldr r2, [r2]
-    cmp r2, r3
-    bne copy_start
-
-    adr r2, slave_cpu_code_flag_tail
-    sub r3, r2, r1                        @ r3 = r2-r1, offset of slave_cpu_code_flag_tail
-    ldr r3, [r0, r3]
-    ldr r2, [r2]
-    cmp r2, r3
-    beq copy_end
-
-copy_start:
-#if 1
-    mov r3, #0x34
-    str r3, [r0, #0x100]
-#endif    
-    adr r1, slave_cpu_code_start
-    adr r2, slave_cpu_code_end
-    
-copy_loop:
-    ldmia   r1!, {r3-r10}
-    stmia   r0!, {r3-r10}
-    cmp     r1, r2
-    ble     copy_loop
-     
-copy_end:
-    dsb
-    isb
-    ldmfd sp!, {r4 - r11, pc}             @ restore 
-
-    /*
-    * code between slave_cpu_code_start and slave_cpu_code_end is for slave cpu.
-    * NOTE: These codes should be position-irrelevant.
-    */
-slave_cpu_code_start:
-    b   slave_cpu_entry
-    b   .                                  @ undefined_instruction
-    b   .                                  @ software_interrupt
-    b   .                                  @ prefetch_abort
-    b   .                                  @ data_abort
-    b   .                                  @ not_used
-    b   .                                  @ irq
-    b   .                                  @ fiq
-
-    @ flag - check whether this code is already in sram
-slave_cpu_code_flag_head:
-    .word 0x12345678
-
-slave_cpu_entry:     
-    /* these code copied from boot
-     * set the cpu to SVC32 mode
-     */
-    mrs r0, cpsr
-    bic r0, r0, #0x1f  /* r0 = ((~0x1F) & r0) */
-    orr r0, r0, #0xd3  /* r0 = (0xd3 | r0)    */
-    msr cpsr,r0
-
-    /*
-     * Invalidate L1 I/D
-     */
-    mov r0, #0                   /* set up for MCR */
-    mcr p15, 0, r0, c8, c7, 0    /* invalidate TLBs */
-    mcr p15, 0, r0, c7, c5, 0    /* invalidate icache */
-
-    /* Invalidate L1 D-cache */
-    mcr p15, 2, r0, c0, c0, 0    /* select L1 data cache */
-    mrc p15, 1, r3, c0, c0, 0    /* Read Current Cache Size Identification Register */
-    movw r1, #0x1ff              /* replace ldr r1, =0x1ff */
-    and r3, r1, r3, LSR #13      /* r3 = (number of sets -1) */
-    mov r0, #0
-way_loop:
-    mov r1, #0                  /* r1->set counter */
-line_loop:
-    mov r2, r0, LSL #30
-    orr r2, r1, LSL #5           /* r2->set/way cache-op format */
-    mcr     p15, 0, r2, c7, c6, 2    /* Invalidate line described by r2 */
-    add r1, r1, #1               /* Increment set counter */
-    cmp r1, r3                   /* Check if the last set is reached... */
-    ble line_loop                /* if not, continue the set_loop */
-    add r0, r0, #1               /* else, Increment way counter */
-    cmp r0, #4                   /* Check if the last way is reached... */
-    blt way_loop                 /* if not, continue the way_loop */
-
-    /*
-     * disable MMU stuff and caches
-     */
-    mrc p15, 0, r0, c1, c0, 0
-    bic r0, r0, #0x00000007      /* clear bits 2:0 (-CAM)  */
-    orr r0, r0, #0x00002000      /* set bit 13 (--V-)      */
-    orr r0, r0, #0x00000002      /* set bit 1 (--A-) Align */
-    orr r0, r0, #0x00000800      /* set bit 12 (Z---) BTB  */
-    mcr p15, 0, r0, c1, c0, 0
-
-
-    ldr r0, =(REG_BASE_SCTL)
-    
-check_bootup_reg:
-    ldr r1, [r0, #REG_SC_GEN16]
-    cmp r1, #0
-    beq check_bootup_reg
-    mov pc, r1
-
-    b .                     @ should never go here
-
-slave_cpu_code_flag_tail:
-    .word 0x87654321
-    
-slave_cpu_code_end:
-    .word .
-        
-ENDPROC(cp_slavecpu_code_to_sram)
-
-
+.section .data
 
 .global hi_pm_ddrbase
 hi_pm_ddrbase:
@@ -584,3 +478,19 @@ hi_pm_cpu0_len:
 scureg_base:
 .word scureg_base
 
+
+#ifdef CONFIG_CA_WARKUP_CHECK
+
+.global hi_sram_virtbase
+hi_sram_virtbase:
+.word hi_sram_virtbase
+
+.global _ddr_wakeup_check_code_begin
+_ddr_wakeup_check_code_begin:
+.word _ddr_wakeup_check_code_begin
+
+.global _ddr_wakeup_check_code_end
+_ddr_wakeup_check_code_end:
+.word _ddr_wakeup_check_code_end
+
+#endif /* CONFIG_CA_WARKUP_CHECK */

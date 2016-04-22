@@ -60,7 +60,27 @@ static int hinfc504_toshiba_24nm_set_rr_reg(struct hinfc_host *host, int param)
 
 static int hinfc504_toshiba_24nm_set_rr_param(struct hinfc_host *host, int param)
 {
-	return hinfc504_toshiba_24nm_set_rr_reg(host, param);
+	int regval;
+
+	regval = hinfc_read(host, HINFC504_PWIDTH);
+	hinfc_write(host, 0xFFF, HINFC504_PWIDTH);
+
+	host->enable_ecc_randomizer(host, DISABLE, DISABLE);
+
+	hinfc_write(host, HINFC_CMD_SEQ(0x5C, 0xC5), HINFC504_CMD);
+	hinfc_write(host, HINFC504_WRITE_2CMD_0ADD_NODATA, HINFC504_OP);
+	WAIT_CONTROLLER_FINISH();
+
+	hinfc504_toshiba_24nm_set_rr_reg(host, param);
+
+	hinfc_write(host, HINFC_CMD_SEQ(0x26, 0x5D), HINFC504_CMD);
+	hinfc_write(host, HINFC504_WRITE_2CMD_0ADD_NODATA, HINFC504_OP);
+	WAIT_CONTROLLER_FINISH();
+
+	host->enable_ecc_randomizer(host, ENABLE, ENABLE);
+	hinfc_write(host, regval, HINFC504_PWIDTH);
+
+	return 0;
 }
 /*****************************************************************************/
 

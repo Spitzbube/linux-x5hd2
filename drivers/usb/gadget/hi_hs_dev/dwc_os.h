@@ -63,8 +63,6 @@ extern "C" {
 # include <stdarg.h>
 #endif
 
-#define DEBUG 1
-
 #if defined(DWC_FREEBSD) || defined(DWC_NETBSD)
 # include <os_dep.h>
 #endif
